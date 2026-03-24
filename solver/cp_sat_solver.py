@@ -31,8 +31,18 @@ from utils.time_utils import (
     fmt_date,
 )
 
-MAX_SOLVE_SECONDS = 180
-NUM_WORKERS       = 8
+# ── Solver configuration ──────────────────────────────────────────────────────
+# Time limit: keep tight — the model is well-constrained so optimal is found fast.
+# Increase only if you see "🟡 RÉALISABLE" instead of "✅ OPTIMAL".
+MAX_SOLVE_SECONDS = 60
+
+# Fixed seed → identical result on every machine, every run.
+# Change only if you want to explore alternative optimal solutions.
+RANDOM_SEED = 42
+
+# Workers: 0 = let CP-SAT auto-detect all available CPU cores (recommended).
+# Do NOT hard-code a number — it varies per machine and hurts reproducibility.
+NUM_WORKERS = 0  # 0 means auto
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -227,19 +237,30 @@ def solve():
             model.AddMaxEquality(mu, uses)
             machine_used.append(mu)
 
+    # ── Objective ─────────────────────────────────────────────────────────────
+    # Priority 1 (dominant): eliminate ALL tardiness — weight 100 000× makespan.
+    # Priority 2: minimise makespan (finish everything as early as possible).
+    # Priority 3 (bonus): spread work across machines (–100 per extra machine used).
+    # The huge tardiness coefficient means the solver will never trade even 1 min
+    # of tardiness for a shorter makespan.
+    TARD_PENALTY = 100_000
     model.Minimize(
-        sum(w * t for w, t in zip(weights, tard_vars))
+        TARD_PENALTY * sum(w * t for w, t in zip(weights, tard_vars))
         + makespan
         - 100 * sum(machine_used)
     )
 
     # ── Solve ─────────────────────────────────────────────────────────────────
     print(f"\n{'━'*70}")
-    print(f"  RÉSOLUTION — limite {MAX_SOLVE_SECONDS}s | {NUM_WORKERS} workers")
+    print(f"  RÉSOLUTION — limite {MAX_SOLVE_SECONDS}s | seed={RANDOM_SEED} | workers=auto")
     print(f"{'━'*70}")
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = MAX_SOLVE_SECONDS
-    solver.parameters.num_search_workers  = NUM_WORKERS
+    solver.parameters.random_seed         = RANDOM_SEED
+    # NUM_WORKERS = 0 → CP-SAT auto-detects all CPU cores on any machine.
+    # This is both faster and reproducible (same seed, same result everywhere).
+    if NUM_WORKERS > 0:
+        solver.parameters.num_search_workers = NUM_WORKERS
     t0     = time.time()
     status = solver.Solve(model)
     elapsed = time.time() - t0
@@ -348,7 +369,7 @@ def solve():
             last_key   = (cmd.NumeroCommande, len(ops)-1, nb_lots_l-1)
             if last_key in lot_vars:
                 fin_pm  = solver.Value(lot_vars[last_key]["end"])
-                fin_day = fin_pm // PPD
+                fin_day = fin_pm // PPD 
                 if fin_day > deadline_day:
                     print(f"   ⚠️  RETARD {fin_day - deadline_day} jour(s)\n")
                 else:
