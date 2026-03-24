@@ -1,34 +1,264 @@
 {
   "OperationsRecette": [
-    { "Id":  1, "RecetteId":  1, "Ordre": 1, "NomOperation": "stonage",           "DureeMinutes": 45, "QuantiteLot": 80, "TempsChargementMinutes": 10, "TempsDecharementMinutes":  8 },
-    { "Id":  2, "RecetteId":  1, "Ordre": 2, "NomOperation": "rinçage",            "DureeMinutes": 20, "QuantiteLot": 90, "TempsChargementMinutes":  5, "TempsDecharementMinutes":  5 },
-    { "Id":  3, "RecetteId":  2, "Ordre": 1, "NomOperation": "javel",              "DureeMinutes": 30, "QuantiteLot": 60, "TempsChargementMinutes":  8, "TempsDecharementMinutes":  8 },
-    { "Id":  4, "RecetteId":  2, "Ordre": 2, "NomOperation": "rinçage",            "DureeMinutes": 20, "QuantiteLot": 90, "TempsChargementMinutes":  5, "TempsDecharementMinutes":  5 },
-    { "Id":  5, "RecetteId":  3, "Ordre": 1, "NomOperation": "javelisation",       "DureeMinutes": 50, "QuantiteLot": 60, "TempsChargementMinutes": 10, "TempsDecharementMinutes":  8 },
-    { "Id":  6, "RecetteId":  3, "Ordre": 2, "NomOperation": "rinçage",            "DureeMinutes": 25, "QuantiteLot": 90, "TempsChargementMinutes":  5, "TempsDecharementMinutes":  5 },
-    { "Id":  7, "RecetteId":  4, "Ordre": 1, "NomOperation": "snow legs",          "DureeMinutes": 60, "QuantiteLot": 50, "TempsChargementMinutes": 12, "TempsDecharementMinutes": 10 },
-    { "Id":  8, "RecetteId":  4, "Ordre": 2, "NomOperation": "rinçage",            "DureeMinutes": 20, "QuantiteLot": 90, "TempsChargementMinutes":  5, "TempsDecharementMinutes":  5 },
-    { "Id":  9, "RecetteId":  5, "Ordre": 1, "NomOperation": "rags",               "DureeMinutes": 55, "QuantiteLot": 55, "TempsChargementMinutes": 10, "TempsDecharementMinutes":  8 },
-    { "Id": 10, "RecetteId":  5, "Ordre": 2, "NomOperation": "rinçage",            "DureeMinutes": 20, "QuantiteLot": 90, "TempsChargementMinutes":  5, "TempsDecharementMinutes":  5 },
-    { "Id": 11, "RecetteId":  6, "Ordre": 1, "NomOperation": "préparation poudre", "DureeMinutes": 25, "QuantiteLot": 80, "TempsChargementMinutes":  7, "TempsDecharementMinutes":  5 },
-    { "Id": 12, "RecetteId":  6, "Ordre": 2, "NomOperation": "poudre",             "DureeMinutes": 40, "QuantiteLot": 70, "TempsChargementMinutes": 10, "TempsDecharementMinutes":  8 },
-    { "Id": 13, "RecetteId":  6, "Ordre": 3, "NomOperation": "rinçage",            "DureeMinutes": 20, "QuantiteLot": 90, "TempsChargementMinutes":  5, "TempsDecharementMinutes":  5 },
-    { "Id": 14, "RecetteId":  7, "Ordre": 1, "NomOperation": "ATOMS",              "DureeMinutes": 70, "QuantiteLot": 45, "TempsChargementMinutes": 12, "TempsDecharementMinutes": 10 },
-    { "Id": 15, "RecetteId":  7, "Ordre": 2, "NomOperation": "rinçage",            "DureeMinutes": 20, "QuantiteLot": 90, "TempsChargementMinutes":  5, "TempsDecharementMinutes":  5 },
-    { "Id": 16, "RecetteId":  8, "Ordre": 1, "NomOperation": "blanchiment",        "DureeMinutes": 80, "QuantiteLot": 50, "TempsChargementMinutes": 12, "TempsDecharementMinutes": 10 },
-    { "Id": 17, "RecetteId":  8, "Ordre": 2, "NomOperation": "rinçage",            "DureeMinutes": 25, "QuantiteLot": 90, "TempsChargementMinutes":  5, "TempsDecharementMinutes":  5 },
-    { "Id": 18, "RecetteId":  9, "Ordre": 1, "NomOperation": "stonage",            "DureeMinutes": 45, "QuantiteLot": 80, "TempsChargementMinutes": 10, "TempsDecharementMinutes":  8 },
-    { "Id": 19, "RecetteId":  9, "Ordre": 2, "NomOperation": "javel",              "DureeMinutes": 30, "QuantiteLot": 60, "TempsChargementMinutes":  8, "TempsDecharementMinutes":  8 },
-    { "Id": 20, "RecetteId":  9, "Ordre": 3, "NomOperation": "rinçage",            "DureeMinutes": 25, "QuantiteLot": 90, "TempsChargementMinutes":  5, "TempsDecharementMinutes":  5 },
-    { "Id": 21, "RecetteId": 10, "Ordre": 1, "NomOperation": "stonage",            "DureeMinutes": 45, "QuantiteLot": 80, "TempsChargementMinutes": 10, "TempsDecharementMinutes":  8 },
-    { "Id": 22, "RecetteId": 10, "Ordre": 2, "NomOperation": "snow legs",          "DureeMinutes": 60, "QuantiteLot": 50, "TempsChargementMinutes": 12, "TempsDecharementMinutes": 10 },
-    { "Id": 23, "RecetteId": 10, "Ordre": 3, "NomOperation": "rinçage",            "DureeMinutes": 25, "QuantiteLot": 90, "TempsChargementMinutes":  5, "TempsDecharementMinutes":  5 },
-    { "Id": 24, "RecetteId": 11, "Ordre": 1, "NomOperation": "préparation poudre", "DureeMinutes": 25, "QuantiteLot": 80, "TempsChargementMinutes":  7, "TempsDecharementMinutes":  5 },
-    { "Id": 25, "RecetteId": 11, "Ordre": 2, "NomOperation": "poudre",             "DureeMinutes": 40, "QuantiteLot": 70, "TempsChargementMinutes": 10, "TempsDecharementMinutes":  8 },
-    { "Id": 26, "RecetteId": 11, "Ordre": 3, "NomOperation": "ATOMS",              "DureeMinutes": 70, "QuantiteLot": 45, "TempsChargementMinutes": 12, "TempsDecharementMinutes": 10 },
-    { "Id": 27, "RecetteId": 11, "Ordre": 4, "NomOperation": "rinçage",            "DureeMinutes": 30, "QuantiteLot": 90, "TempsChargementMinutes":  5, "TempsDecharementMinutes":  5 },
-    { "Id": 28, "RecetteId": 12, "Ordre": 1, "NomOperation": "javel",              "DureeMinutes": 30, "QuantiteLot": 60, "TempsChargementMinutes":  8, "TempsDecharementMinutes":  8 },
-    { "Id": 29, "RecetteId": 12, "Ordre": 2, "NomOperation": "blanchiment",        "DureeMinutes": 80, "QuantiteLot": 50, "TempsChargementMinutes": 12, "TempsDecharementMinutes": 10 },
-    { "Id": 30, "RecetteId": 12, "Ordre": 3, "NomOperation": "rinçage",            "DureeMinutes": 25, "QuantiteLot": 90, "TempsChargementMinutes":  5, "TempsDecharementMinutes":  5 }
+    {
+      "Id": 1,
+      "RecetteId": 1,
+      "Ordre": 1,
+      "NomOperation": "Poudre",
+      "DureeMinutes": 30,
+      "QuantiteLot": 60,
+      "TempsChargementMinutes": 10,
+      "TempsDecharementMinutes": 20
+    },
+    {
+      "Id": 2,
+      "RecetteId": 1,
+      "Ordre": 2,
+      "NomOperation": "Rags",
+      "DureeMinutes": 55,
+      "QuantiteLot": 70,
+      "TempsChargementMinutes": 12,
+      "TempsDecharementMinutes": 22
+    },
+    {
+      "Id": 3,
+      "RecetteId": 1,
+      "Ordre": 3,
+      "NomOperation": "Rincage",
+      "DureeMinutes": 35,
+      "QuantiteLot": 60,
+      "TempsChargementMinutes": 15,
+      "TempsDecharementMinutes": 20
+    },
+    {
+      "Id": 4,
+      "RecetteId": 2,
+      "Ordre": 1,
+      "NomOperation": "Poudre",
+      "DureeMinutes": 30,
+      "QuantiteLot": 60,
+      "TempsChargementMinutes": 10,
+      "TempsDecharementMinutes": 20
+    },
+    {
+      "Id": 5,
+      "RecetteId": 2,
+      "Ordre": 2,
+      "NomOperation": "stonage",
+      "DureeMinutes": 38,
+      "QuantiteLot": 50,
+      "TempsChargementMinutes": 20,
+      "TempsDecharementMinutes": 20
+    },
+    {
+      "Id": 6,
+      "RecetteId": 2,
+      "Ordre": 3,
+      "NomOperation": "Rincage",
+      "DureeMinutes": 35,
+      "QuantiteLot": 60,
+      "TempsChargementMinutes": 15,
+      "TempsDecharementMinutes": 20
+    },
+    {
+      "Id": 7,
+      "RecetteId": 2,
+      "Ordre": 4,
+      "NomOperation": "javellisation",
+      "DureeMinutes": 15,
+      "QuantiteLot": 50,
+      "TempsChargementMinutes": 10,
+      "TempsDecharementMinutes": 15
+    },
+    {
+      "Id": 8,
+      "RecetteId": 3,
+      "Ordre": 1,
+      "NomOperation": "Poudre",
+      "DureeMinutes": 30,
+      "QuantiteLot": 60,
+      "TempsChargementMinutes": 10,
+      "TempsDecharementMinutes": 20
+    },
+    {
+      "Id": 9,
+      "RecetteId": 3,
+      "Ordre": 2,
+      "NomOperation": "blanchiment",
+      "DureeMinutes": 40,
+      "QuantiteLot": 65,
+      "TempsChargementMinutes": 20,
+      "TempsDecharementMinutes": 25
+    },
+    {
+      "Id": 10,
+      "RecetteId": 3,
+      "Ordre": 3,
+      "NomOperation": "javellisation",
+      "DureeMinutes": 15,
+      "QuantiteLot": 50,
+      "TempsChargementMinutes": 10,
+      "TempsDecharementMinutes": 15
+    },
+    {
+      "Id": 11,
+      "RecetteId": 3,
+      "Ordre": 4,
+      "NomOperation": "javellisation",
+      "DureeMinutes": 10,
+      "QuantiteLot": 50,
+      "TempsChargementMinutes": 20,
+      "TempsDecharementMinutes": 25
+    },
+    {
+      "Id": 12,
+      "RecetteId": 4,
+      "Ordre": 1,
+      "NomOperation": "Poudre",
+      "DureeMinutes": 30,
+      "QuantiteLot": 60,
+      "TempsChargementMinutes": 10,
+      "TempsDecharementMinutes": 20
+    },
+    {
+      "Id": 13,
+      "RecetteId": 4,
+      "Ordre": 2,
+      "NomOperation": "stonage",
+      "DureeMinutes": 38,
+      "QuantiteLot": 50,
+      "TempsChargementMinutes": 20,
+      "TempsDecharementMinutes": 20
+    },
+    {
+      "Id": 14,
+      "RecetteId": 4,
+      "Ordre": 3,
+      "NomOperation": "Snow Legs",
+      "DureeMinutes": 25,
+      "QuantiteLot": 40,
+      "TempsChargementMinutes": 15,
+      "TempsDecharementMinutes": 15
+    },
+    {
+      "Id": 15,
+      "RecetteId": 4,
+      "Ordre": 4,
+      "NomOperation": "Rincage",
+      "DureeMinutes": 35,
+      "QuantiteLot": 60,
+      "TempsChargementMinutes": 15,
+      "TempsDecharementMinutes": 20
+    },
+    {
+      "Id": 16,
+      "RecetteId": 5,
+      "Ordre": 1,
+      "NomOperation": "Poudre",
+      "DureeMinutes": 30,
+      "QuantiteLot": 60,
+      "TempsChargementMinutes": 10,
+      "TempsDecharementMinutes": 20
+    },
+    {
+      "Id": 17,
+      "RecetteId": 5,
+      "Ordre": 2,
+      "NomOperation": "ATOMS",
+      "DureeMinutes": 45,
+      "QuantiteLot": 55,
+      "TempsChargementMinutes": 15,
+      "TempsDecharementMinutes": 20
+    },
+    {
+      "Id": 18,
+      "RecetteId": 5,
+      "Ordre": 3,
+      "NomOperation": "blanchiment",
+      "DureeMinutes": 40,
+      "QuantiteLot": 65,
+      "TempsChargementMinutes": 20,
+      "TempsDecharementMinutes": 25
+    },
+    {
+      "Id": 19,
+      "RecetteId": 5,
+      "Ordre": 4,
+      "NomOperation": "Rincage",
+      "DureeMinutes": 35,
+      "QuantiteLot": 60,
+      "TempsChargementMinutes": 15,
+      "TempsDecharementMinutes": 20
+    },
+    {
+      "Id": 20,
+      "RecetteId": 6,
+      "Ordre": 1,
+      "NomOperation": "Poudre",
+      "DureeMinutes": 30,
+      "QuantiteLot": 60,
+      "TempsChargementMinutes": 10,
+      "TempsDecharementMinutes": 20
+    },
+    {
+      "Id": 21,
+      "RecetteId": 6,
+      "Ordre": 2,
+      "NomOperation": "Rags",
+      "DureeMinutes": 55,
+      "QuantiteLot": 70,
+      "TempsChargementMinutes": 12,
+      "TempsDecharementMinutes": 22
+    },
+    {
+      "Id": 22,
+      "RecetteId": 6,
+      "Ordre": 3,
+      "NomOperation": "blanchiment",
+      "DureeMinutes": 40,
+      "QuantiteLot": 65,
+      "TempsChargementMinutes": 20,
+      "TempsDecharementMinutes": 25
+    },
+    {
+      "Id": 23,
+      "RecetteId": 6,
+      "Ordre": 4,
+      "NomOperation": "Rincage",
+      "DureeMinutes": 35,
+      "QuantiteLot": 60,
+      "TempsChargementMinutes": 15,
+      "TempsDecharementMinutes": 20
+    },
+    {
+      "Id": 24,
+      "RecetteId": 6,
+      "Ordre": 5,
+      "NomOperation": "stonage",
+      "DureeMinutes": 38,
+      "QuantiteLot": 50,
+      "TempsChargementMinutes": 20,
+      "TempsDecharementMinutes": 20
+    },
+    {
+      "Id": 25,
+      "RecetteId": 6,
+      "Ordre": 6,
+      "NomOperation": "javellisation",
+      "DureeMinutes": 15,
+      "QuantiteLot": 50,
+      "TempsChargementMinutes": 10,
+      "TempsDecharementMinutes": 15
+    },
+    {
+      "Id": 26,
+      "RecetteId": 6,
+      "Ordre": 7,
+      "NomOperation": "javellisation",
+      "DureeMinutes": 10,
+      "QuantiteLot": 50,
+      "TempsChargementMinutes": 20,
+      "TempsDecharementMinutes": 25
+    }
   ]
 }

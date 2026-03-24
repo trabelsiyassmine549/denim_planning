@@ -28,8 +28,8 @@ CMD_PALETTE = [
     "#312E81","#164E63","#DC2626","#16A34A","#2563EB","#9333EA",
     "#EA580C","#0891B2","#D97706","#10B981","#6366F1","#F43F5E",
 ]
-URGENCE_LABELS = {1: "Urgent", 2: "Normal", 3: "Flexible"}
-URGENCE_COLORS = {1: "#EF4444", 2: "#F97316", 3: "#10B981"}
+URGENCE_LABELS = {1: "Urgent", 2: "Haute", 3: "Normal", 4: "Basse", 5: "Flexible"}
+URGENCE_COLORS = {1: "#DC2626", 2: "#F97316", 3: "#EAB308", 4: "#22C55E", 5: "#10B981"}
 DAY_NAMES_FR   = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"]
 
 

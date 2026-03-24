@@ -2,51 +2,27 @@
   "Recettes": [
     {
       "Id": 1,
-      "NomRecette": "stonage_classique"
+      "NomRecette": "55587"
     },
     {
       "Id": 2,
-      "NomRecette": "javel_leger"
+      "NomRecette": "98761"
     },
     {
       "Id": 3,
-      "NomRecette": "javelisation_forte"
+      "NomRecette": "12365"
     },
     {
       "Id": 4,
-      "NomRecette": "snow_legs"
+      "NomRecette": "147963"
     },
     {
       "Id": 5,
-      "NomRecette": "rags_effect"
+      "NomRecette": "22587"
     },
     {
       "Id": 6,
-      "NomRecette": "poudre_standard"
-    },
-    {
-      "Id": 7,
-      "NomRecette": "atoms_delave"
-    },
-    {
-      "Id": 8,
-      "NomRecette": "blanchiment_total"
-    },
-    {
-      "Id": 9,
-      "NomRecette": "stonage_javel"
-    },
-    {
-      "Id": 10,
-      "NomRecette": "stonage_snow"
-    },
-    {
-      "Id": 11,
-      "NomRecette": "poudre_atoms"
-    },
-    {
-      "Id": 12,
-      "NomRecette": "javel_blanchiment"
+      "NomRecette": "33115"
     }
   ]
 }

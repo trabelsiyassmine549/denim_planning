@@ -3,282 +3,492 @@
     {
       "Id": 1,
       "NomMachine": "Brongo 1",
-      "CapaciteMax": 80,
-      "Statut": "fonctionnel",
-      "Operations": "stonage, javel, rinçage, blanchiment"
+      "CapaciteMax": 150,
+      "Statut": "Fonctionnel",
+      "Operations": "Poudre, Rags"
     },
     {
       "Id": 2,
       "NomMachine": "Brongo 2",
-      "CapaciteMax": 80,
-      "Statut": "fonctionnel",
-      "Operations": "stonage, javel, rinçage, blanchiment"
+      "CapaciteMax": 150,
+      "Statut": "Fonctionnel",
+      "Operations": "Poudre, Rags"
     },
     {
       "Id": 3,
       "NomMachine": "Brongo 3",
-      "CapaciteMax": 120,
-      "Statut": "non fonctionnel",
-      "Operations": "stonage, javel, rinçage, blanchiment"
+      "CapaciteMax": 200,
+      "Statut": "Fonctionnel",
+      "Operations": "Poudre, Rags"
     },
     {
       "Id": 4,
       "NomMachine": "Brongo 4",
-      "CapaciteMax": 150,
-      "Statut": "fonctionnel",
-      "Operations": "stonage, javelisation, rinçage, blanchiment"
+      "CapaciteMax": 100,
+      "Statut": "Non fonctionnel",
+      "Operations": "Poudre, Rags"
     },
     {
       "Id": 5,
       "NomMachine": "Brongo 5",
-      "CapaciteMax": 50,
-      "Statut": "fonctionnel",
-      "Operations": "stonage, javelisation, rinçage, blanchiment"
+      "CapaciteMax": 100,
+      "Statut": "Fonctionnel",
+      "Operations": "Poudre, Rags"
     },
     {
       "Id": 6,
-      "NomMachine": "Tupesa 1",
-      "CapaciteMax": 50,
-      "Statut": "fonctionnel",
-      "Operations": "stonage, snow legs, rinçage, poudre"
+      "NomMachine": "Brongo 6",
+      "CapaciteMax": 60,
+      "Statut": "Fonctionnel",
+      "Operations": "Poudre, Rags"
     },
     {
       "Id": 7,
-      "NomMachine": "Tupesa 2",
-      "CapaciteMax": 30,
-      "Statut": "fonctionnel",
-      "Operations": "stonage, snow legs, rinçage, poudre"
+      "NomMachine": "Brongo 7",
+      "CapaciteMax": 100,
+      "Statut": "Fonctionnel",
+      "Operations": "Poudre, Rags"
     },
     {
       "Id": 8,
-      "NomMachine": "Tupesa 3",
-      "CapaciteMax": 180,
-      "Statut": "fonctionnel",
-      "Operations": "stonage, snow legs, rinçage, poudre"
+      "NomMachine": "Tupesa 1",
+      "CapaciteMax": 50,
+      "Statut": "Fonctionnel",
+      "Operations": "Poudre, stonage"
     },
     {
       "Id": 9,
-      "NomMachine": "Tupesa 4",
-      "CapaciteMax": 180,
-      "Statut": "non fonctionnel",
-      "Operations": "stonage, rags, rinçage"
+      "NomMachine": "Tupesa 2",
+      "CapaciteMax": 100,
+      "Statut": "Non fonctionnel",
+      "Operations": "Poudre, stonage"
     },
     {
       "Id": 10,
-      "NomMachine": "Tupesa 5",
-      "CapaciteMax": 50,
-      "Statut": "fonctionnel",
-      "Operations": "stonage, rags, rinçage"
+      "NomMachine": "Tupesa 3",
+      "CapaciteMax": 200,
+      "Statut": "Non fonctionnel",
+      "Operations": "Poudre, stonage"
     },
     {
       "Id": 11,
-      "NomMachine": "OMI 1",
-      "CapaciteMax": 100,
-      "Statut": "fonctionnel",
-      "Operations": "ATOMS, blanchiment, rinçage, préparation poudre"
+      "NomMachine": "Tupesa 4",
+      "CapaciteMax": 200,
+      "Statut": "Non fonctionnel",
+      "Operations": "Poudre, stonage"
     },
     {
       "Id": 12,
-      "NomMachine": "OMI 2",
+      "NomMachine": "Tupesa 5",
       "CapaciteMax": 100,
-      "Statut": "fonctionnel",
-      "Operations": "ATOMS, blanchiment, rinçage, préparation poudre"
+      "Statut": "Fonctionnel",
+      "Operations": "Poudre, stonage"
     },
     {
       "Id": 13,
-      "NomMachine": "OMI 3",
-      "CapaciteMax": 100,
-      "Statut": "fonctionnel",
-      "Operations": "ATOMS, blanchiment, rinçage, préparation poudre"
+      "NomMachine": "Tupesa 6",
+      "CapaciteMax": 50,
+      "Statut": "Fonctionnel",
+      "Operations": "Poudre, stonage"
     },
     {
       "Id": 14,
-      "NomMachine": "OMI 4",
-      "CapaciteMax": 100,
-      "Statut": "non fonctionnel",
-      "Operations": "ATOMS, blanchiment, rinçage"
+      "NomMachine": "Tupesa 7",
+      "CapaciteMax": 255,
+      "Statut": "Fonctionnel",
+      "Operations": "Poudre, stonage"
     },
     {
       "Id": 15,
-      "NomMachine": "Tonello 1",
-      "CapaciteMax": 250,
-      "Statut": "fonctionnel",
-      "Operations": "javel, javelisation, rinçage, blanchiment, ATOMS"
+      "NomMachine": "Javex 1",
+      "CapaciteMax": 200,
+      "Statut": "Fonctionnel",
+      "Operations": "Javel, javellisation"
     },
     {
       "Id": 16,
-      "NomMachine": "Tonello 2",
-      "CapaciteMax": 250,
-      "Statut": "fonctionnel",
-      "Operations": "javel, javelisation, rinçage, blanchiment, ATOMS"
+      "NomMachine": "Javex 2",
+      "CapaciteMax": 150,
+      "Statut": "Fonctionnel",
+      "Operations": "Javel, javellisation"
     },
     {
       "Id": 17,
-      "NomMachine": "Tonello 3",
-      "CapaciteMax": 220,
-      "Statut": "fonctionnel",
-      "Operations": "javel, javelisation, rinçage, blanchiment"
+      "NomMachine": "Javex 3",
+      "CapaciteMax": 255,
+      "Statut": "Non fonctionnel",
+      "Operations": "Javel, javellisation"
     },
     {
       "Id": 18,
-      "NomMachine": "Tonello 4",
-      "CapaciteMax": 220,
-      "Statut": "non fonctionnel",
-      "Operations": "javel, javelisation, rinçage"
+      "NomMachine": "Javex 4",
+      "CapaciteMax": 200,
+      "Statut": "Fonctionnel",
+      "Operations": "Javel, javellisation"
     },
     {
       "Id": 19,
-      "NomMachine": "Tonello 5",
+      "NomMachine": "Javex 5",
       "CapaciteMax": 200,
-      "Statut": "fonctionnel",
-      "Operations": "snow legs, poudre, rinçage, blanchiment"
+      "Statut": "Fonctionnel",
+      "Operations": "Javel, javellisation"
     },
     {
       "Id": 20,
-      "NomMachine": "Tonello 6",
+      "NomMachine": "Javex 6",
       "CapaciteMax": 200,
-      "Statut": "fonctionnel",
-      "Operations": "snow legs, poudre, rinçage, blanchiment"
+      "Statut": "Non fonctionnel",
+      "Operations": "Javel, javellisation"
     },
     {
       "Id": 21,
-      "NomMachine": "Brongo 6",
-      "CapaciteMax": 130,
-      "Statut": "fonctionnel",
-      "Operations": "stonage, javel, rinçage"
+      "NomMachine": "Javex 7",
+      "CapaciteMax": 50,
+      "Statut": "Fonctionnel",
+      "Operations": "Javel, javellisation"
     },
     {
       "Id": 22,
-      "NomMachine": "Brongo 7",
-      "CapaciteMax": 130,
-      "Statut": "fonctionnel",
-      "Operations": "stonage, javel, rinçage"
+      "NomMachine": "Stonex 1",
+      "CapaciteMax": 150,
+      "Statut": "Fonctionnel",
+      "Operations": "stonage, Poudre"
     },
     {
       "Id": 23,
-      "NomMachine": "Brongo 8",
-      "CapaciteMax": 130,
-      "Statut": "non fonctionnel",
-      "Operations": "stonage, javel, rinçage, blanchiment"
+      "NomMachine": "Stonex 2",
+      "CapaciteMax": 255,
+      "Statut": "Fonctionnel",
+      "Operations": "stonage, Poudre"
     },
     {
       "Id": 24,
-      "NomMachine": "Tupesa 6",
-      "CapaciteMax": 190,
-      "Statut": "fonctionnel",
-      "Operations": "rags, poudre, préparation poudre, rinçage"
+      "NomMachine": "Stonex 3",
+      "CapaciteMax": 200,
+      "Statut": "Fonctionnel",
+      "Operations": "stonage, Poudre"
     },
     {
       "Id": 25,
-      "NomMachine": "Tupesa 7",
-      "CapaciteMax": 190,
-      "Statut": "fonctionnel",
-      "Operations": "rags, poudre, préparation poudre, rinçage"
+      "NomMachine": "Stonex 4",
+      "CapaciteMax": 100,
+      "Statut": "Fonctionnel",
+      "Operations": "stonage, Poudre"
     },
     {
       "Id": 26,
-      "NomMachine": "Tupesa 8",
-      "CapaciteMax": 175,
-      "Statut": "fonctionnel",
-      "Operations": "snow legs, rags, rinçage"
+      "NomMachine": "Stonex 5",
+      "CapaciteMax": 100,
+      "Statut": "Fonctionnel",
+      "Operations": "stonage, Poudre"
     },
     {
       "Id": 27,
-      "NomMachine": "OMI 5",
-      "CapaciteMax": 90,
-      "Statut": "fonctionnel",
-      "Operations": "ATOMS, blanchiment, rinçage"
+      "NomMachine": "Stonex 6",
+      "CapaciteMax": 50,
+      "Statut": "Fonctionnel",
+      "Operations": "stonage, Poudre"
     },
     {
       "Id": 28,
-      "NomMachine": "OMI 6",
-      "CapaciteMax": 90,
-      "Statut": "fonctionnel",
-      "Operations": "ATOMS, blanchiment, rinçage, préparation poudre"
+      "NomMachine": "Stonex 7",
+      "CapaciteMax": 200,
+      "Statut": "Fonctionnel",
+      "Operations": "stonage, Poudre"
     },
     {
       "Id": 29,
-      "NomMachine": "Tonello 7",
-      "CapaciteMax": 230,
-      "Statut": "fonctionnel",
-      "Operations": "javelisation, blanchiment, rinçage, ATOMS"
+      "NomMachine": "Blanc 1",
+      "CapaciteMax": 60,
+      "Statut": "Fonctionnel",
+      "Operations": "blanchiment, Rincage"
     },
     {
       "Id": 30,
-      "NomMachine": "Tonello 8",
-      "CapaciteMax": 230,
-      "Statut": "fonctionnel",
-      "Operations": "javelisation, blanchiment, rinçage, ATOMS"
+      "NomMachine": "Blanc 2",
+      "CapaciteMax": 150,
+      "Statut": "Fonctionnel",
+      "Operations": "blanchiment, Rincage"
     },
     {
       "Id": 31,
-      "NomMachine": "Brongo 9",
-      "CapaciteMax": 140,
-      "Statut": "fonctionnel",
-      "Operations": "stonage, rinçage, javel"
+      "NomMachine": "Blanc 3",
+      "CapaciteMax": 100,
+      "Statut": "Fonctionnel",
+      "Operations": "blanchiment, Rincage"
     },
     {
       "Id": 32,
-      "NomMachine": "Brongo 10",
-      "CapaciteMax": 140,
-      "Statut": "non fonctionnel",
-      "Operations": "stonage, rinçage, javel"
+      "NomMachine": "Blanc 4",
+      "CapaciteMax": 150,
+      "Statut": "Fonctionnel",
+      "Operations": "blanchiment, Rincage"
     },
     {
       "Id": 33,
-      "NomMachine": "Tupesa 9",
-      "CapaciteMax": 170,
-      "Statut": "fonctionnel",
-      "Operations": "snow legs, stonage, rinçage"
+      "NomMachine": "Blanc 5",
+      "CapaciteMax": 200,
+      "Statut": "Fonctionnel",
+      "Operations": "blanchiment, Rincage"
     },
     {
       "Id": 34,
-      "NomMachine": "Tupesa 10",
-      "CapaciteMax": 170,
-      "Statut": "fonctionnel",
-      "Operations": "snow legs, stonage, rinçage"
+      "NomMachine": "Blanc 6",
+      "CapaciteMax": 50,
+      "Statut": "Fonctionnel",
+      "Operations": "blanchiment, Rincage"
     },
     {
       "Id": 35,
-      "NomMachine": "OMI 7",
-      "CapaciteMax": 95,
-      "Statut": "fonctionnel",
-      "Operations": "ATOMS, préparation poudre, rinçage"
+      "NomMachine": "Blanc 7",
+      "CapaciteMax": 200,
+      "Statut": "Fonctionnel",
+      "Operations": "blanchiment, Rincage"
     },
     {
       "Id": 36,
-      "NomMachine": "OMI 8",
-      "CapaciteMax": 95,
-      "Statut": "non fonctionnel",
-      "Operations": "ATOMS, blanchiment, rinçage"
+      "NomMachine": "Rinco 1",
+      "CapaciteMax": 200,
+      "Statut": "Fonctionnel",
+      "Operations": "Rincage, blanchiment"
     },
     {
       "Id": 37,
-      "NomMachine": "Tonello 9",
-      "CapaciteMax": 210,
-      "Statut": "fonctionnel",
-      "Operations": "poudre, préparation poudre, rinçage, blanchiment"
+      "NomMachine": "Rinco 2",
+      "CapaciteMax": 100,
+      "Statut": "Fonctionnel",
+      "Operations": "Rincage, blanchiment"
     },
     {
       "Id": 38,
-      "NomMachine": "Tonello 10",
-      "CapaciteMax": 210,
-      "Statut": "fonctionnel",
-      "Operations": "poudre, préparation poudre, rinçage, blanchiment"
+      "NomMachine": "Rinco 3",
+      "CapaciteMax": 200,
+      "Statut": "Fonctionnel",
+      "Operations": "Rincage, blanchiment"
     },
     {
       "Id": 39,
-      "NomMachine": "Brongo 11",
-      "CapaciteMax": 125,
-      "Statut": "fonctionnel",
-      "Operations": "javel, javelisation, rinçage"
+      "NomMachine": "Rinco 4",
+      "CapaciteMax": 100,
+      "Statut": "Fonctionnel",
+      "Operations": "Rincage, blanchiment"
     },
     {
       "Id": 40,
-      "NomMachine": "Brongo 12",
-      "CapaciteMax": 125,
-      "Statut": "fonctionnel",
-      "Operations": "stonage, javel, javelisation, rinçage"
+      "NomMachine": "Rinco 5",
+      "CapaciteMax": 100,
+      "Statut": "Fonctionnel",
+      "Operations": "Rincage, blanchiment"
+    },
+    {
+      "Id": 41,
+      "NomMachine": "Rinco 6",
+      "CapaciteMax": 60,
+      "Statut": "Fonctionnel",
+      "Operations": "Rincage, blanchiment"
+    },
+    {
+      "Id": 42,
+      "NomMachine": "Rinco 7",
+      "CapaciteMax": 255,
+      "Statut": "Fonctionnel",
+      "Operations": "Rincage, blanchiment"
+    },
+    {
+      "Id": 43,
+      "NomMachine": "SnowM 1",
+      "CapaciteMax": 50,
+      "Statut": "Fonctionnel",
+      "Operations": "Snow Legs, javellisation"
+    },
+    {
+      "Id": 44,
+      "NomMachine": "SnowM 2",
+      "CapaciteMax": 60,
+      "Statut": "Fonctionnel",
+      "Operations": "Snow Legs, javellisation"
+    },
+    {
+      "Id": 45,
+      "NomMachine": "SnowM 3",
+      "CapaciteMax": 50,
+      "Statut": "Fonctionnel",
+      "Operations": "Snow Legs, javellisation"
+    },
+    {
+      "Id": 46,
+      "NomMachine": "SnowM 4",
+      "CapaciteMax": 255,
+      "Statut": "Non fonctionnel",
+      "Operations": "Snow Legs, javellisation"
+    },
+    {
+      "Id": 47,
+      "NomMachine": "SnowM 5",
+      "CapaciteMax": 200,
+      "Statut": "Fonctionnel",
+      "Operations": "Snow Legs, javellisation"
+    },
+    {
+      "Id": 48,
+      "NomMachine": "SnowM 6",
+      "CapaciteMax": 255,
+      "Statut": "Fonctionnel",
+      "Operations": "Snow Legs, javellisation"
+    },
+    {
+      "Id": 49,
+      "NomMachine": "SnowM 7",
+      "CapaciteMax": 200,
+      "Statut": "Fonctionnel",
+      "Operations": "Snow Legs, javellisation"
+    },
+    {
+      "Id": 50,
+      "NomMachine": "Ragster 1",
+      "CapaciteMax": 60,
+      "Statut": "Fonctionnel",
+      "Operations": "Rags, Poudre"
+    },
+    {
+      "Id": 51,
+      "NomMachine": "Ragster 2",
+      "CapaciteMax": 200,
+      "Statut": "Fonctionnel",
+      "Operations": "Rags, Poudre"
+    },
+    {
+      "Id": 52,
+      "NomMachine": "Ragster 3",
+      "CapaciteMax": 150,
+      "Statut": "Fonctionnel",
+      "Operations": "Rags, Poudre"
+    },
+    {
+      "Id": 53,
+      "NomMachine": "Ragster 4",
+      "CapaciteMax": 150,
+      "Statut": "Fonctionnel",
+      "Operations": "Rags, Poudre"
+    },
+    {
+      "Id": 54,
+      "NomMachine": "Ragster 5",
+      "CapaciteMax": 255,
+      "Statut": "Non fonctionnel",
+      "Operations": "Rags, Poudre"
+    },
+    {
+      "Id": 55,
+      "NomMachine": "Ragster 6",
+      "CapaciteMax": 100,
+      "Statut": "Fonctionnel",
+      "Operations": "Rags, Poudre"
+    },
+    {
+      "Id": 56,
+      "NomMachine": "Ragster 7",
+      "CapaciteMax": 200,
+      "Statut": "Fonctionnel",
+      "Operations": "Rags, Poudre"
+    },
+    {
+      "Id": 57,
+      "NomMachine": "Atomix 1",
+      "CapaciteMax": 200,
+      "Statut": "Fonctionnel",
+      "Operations": "ATOMS, blanchiment"
+    },
+    {
+      "Id": 58,
+      "NomMachine": "Atomix 2",
+      "CapaciteMax": 60,
+      "Statut": "Fonctionnel",
+      "Operations": "ATOMS, blanchiment"
+    },
+    {
+      "Id": 59,
+      "NomMachine": "Atomix 3",
+      "CapaciteMax": 255,
+      "Statut": "Fonctionnel",
+      "Operations": "ATOMS, blanchiment"
+    },
+    {
+      "Id": 60,
+      "NomMachine": "Atomix 4",
+      "CapaciteMax": 255,
+      "Statut": "Fonctionnel",
+      "Operations": "ATOMS, blanchiment"
+    },
+    {
+      "Id": 61,
+      "NomMachine": "Atomix 5",
+      "CapaciteMax": 60,
+      "Statut": "Fonctionnel",
+      "Operations": "ATOMS, blanchiment"
+    },
+    {
+      "Id": 62,
+      "NomMachine": "Atomix 6",
+      "CapaciteMax": 50,
+      "Statut": "Fonctionnel",
+      "Operations": "ATOMS, blanchiment"
+    },
+    {
+      "Id": 63,
+      "NomMachine": "Atomix 7",
+      "CapaciteMax": 60,
+      "Statut": "Fonctionnel",
+      "Operations": "ATOMS, blanchiment"
+    },
+    {
+      "Id": 64,
+      "NomMachine": "Prepper 1",
+      "CapaciteMax": 60,
+      "Statut": "Fonctionnel",
+      "Operations": "Poudre"
+    },
+    {
+      "Id": 65,
+      "NomMachine": "Prepper 2",
+      "CapaciteMax": 200,
+      "Statut": "Fonctionnel",
+      "Operations": "Poudre"
+    },
+    {
+      "Id": 66,
+      "NomMachine": "Prepper 3",
+      "CapaciteMax": 200,
+      "Statut": "Fonctionnel",
+      "Operations": "Poudre"
+    },
+    {
+      "Id": 67,
+      "NomMachine": "Prepper 4",
+      "CapaciteMax": 50,
+      "Statut": "Fonctionnel",
+      "Operations": "Poudre"
+    },
+    {
+      "Id": 68,
+      "NomMachine": "Prepper 5",
+      "CapaciteMax": 255,
+      "Statut": "Fonctionnel",
+      "Operations": "Poudre"
+    },
+    {
+      "Id": 69,
+      "NomMachine": "Prepper 6",
+      "CapaciteMax": 200,
+      "Statut": "Fonctionnel",
+      "Operations": "Poudre"
+    },
+    {
+      "Id": 70,
+      "NomMachine": "Prepper 7",
+      "CapaciteMax": 50,
+      "Statut": "Fonctionnel",
+      "Operations": "Poudre"
     }
   ]
 }

@@ -12,6 +12,8 @@ if _ROOT not in sys.path:
 from utils.data_loader import load_data, validate_data
 from utils.time_utils import date_to_offset, WORK_MINS_PER_DAY
 
+URGENCE_LABELS = {1: "Urgent", 2: "Haute", 3: "Normal", 4: "Basse", 5: "Flexible"}
+
 
 def analyze():
     print("=" * 80)
@@ -44,19 +46,20 @@ def analyze():
             print(f"  ❌ {m.Id} — {m.NomMachine}")
         print()
 
-    # Capacité par opération
+    # Capacité par opération (case-insensitive grouping)
     cap_by_op: dict = {}
     machines_by_op: dict = {}
     for m in machines_ok:
         for op in m.operations_list():
-            cap_by_op[op] = cap_by_op.get(op, 0) + m.CapaciteMax
-            machines_by_op.setdefault(op, []).append(m)
+            op_lower = op.lower()
+            cap_by_op[op_lower] = cap_by_op.get(op_lower, 0) + m.CapaciteMax
+            machines_by_op.setdefault(op_lower, []).append(m)
 
     print("📊 CAPACITÉ PAR OPÉRATION (machines fonctionnelles)")
     print("-" * 80)
-    for op in sorted(cap_by_op):
-        nb = len(machines_by_op[op])
-        print(f"  {op:22s}: {nb:2d} machine(s) | capacité cumulée = {cap_by_op[op]} pcs/cycle")
+    for op_lower in sorted(cap_by_op):
+        nb = len(machines_by_op[op_lower])
+        print(f"  {op_lower:22s}: {nb:2d} machine(s) | capacité cumulée = {cap_by_op[op_lower]} pcs/cycle")
     print()
 
     # ── Analyse commandes ─────────────────────────────────────────────────────
@@ -68,9 +71,10 @@ def analyze():
         export_offset = date_to_offset(cmd.DateExport)
         ops           = ops_by_recette.get(cmd.RecetteId, [])
         recette_name  = recettes_by_id.get(cmd.RecetteId, None)
+        urg_label     = URGENCE_LABELS.get(cmd.Urgence, f"Urgence {cmd.Urgence}")
 
         print(f"\n  {cmd.NumeroCommande}")
-        print(f"  Quantité: {cmd.Quantite} pcs | Urgence: {cmd.Urgence} | "
+        print(f"  Quantité: {cmd.Quantite} pcs | Urgence: {cmd.Urgence} ({urg_label}) | "
               f"Recette: {recette_name.NomRecette if recette_name else '???'} (Id={cmd.RecetteId})")
         print(f"  Export: {cmd.DateExport} (J+{export_offset})")
 
@@ -86,7 +90,7 @@ def analyze():
             nb_cycles    = math.ceil(cmd.Quantite / op.QuantiteLot)
             op_total_min = op.DureeMinutes * nb_cycles
             total_duree += op_total_min
-            mach_avail   = machines_by_op.get(op.NomOperation, [])
+            mach_avail   = machines_by_op.get(op.NomOperation.lower(), [])
             status       = "✅" if mach_avail else "❌ AUCUNE MACHINE"
             print(f"    • {op.NomOperation:22s} {op.DureeMinutes:3d}min × {nb_cycles} cycle(s)"
                   f" = {op_total_min:4d}min | lot={op.QuantiteLot}pcs | {status}")
@@ -135,18 +139,17 @@ def analyze():
     for cmd in commandes:
         for op in ops_by_recette.get(cmd.RecetteId, []):
             nb_cyc = math.ceil(cmd.Quantite / op.QuantiteLot)
-            total_by_op[op.NomOperation] = (
-                total_by_op.get(op.NomOperation, 0) + op.DureeMinutes * nb_cyc
-            )
+            key = op.NomOperation.lower()
+            total_by_op[key] = total_by_op.get(key, 0) + op.DureeMinutes * nb_cyc
 
-    for op in sorted(total_by_op):
-        total_min   = total_by_op[op]
-        nb_mach     = len(machines_by_op.get(op, []))
+    for op_lower in sorted(total_by_op):
+        total_min   = total_by_op[op_lower]
+        nb_mach     = len(machines_by_op.get(op_lower, []))
         hm_needed   = total_min / 60
         hm_avail    = nb_mach * 8
         days_needed = math.ceil(hm_needed / hm_avail) if hm_avail else 999
         sign        = "✅" if days_needed <= 20 else "⚠️ "
-        print(f"  {op:22s}: {total_min:5d} min | {nb_mach} machine(s) × 8h = {hm_avail}h/jour")
+        print(f"  {op_lower:22s}: {total_min:5d} min | {nb_mach} machine(s) × 8h = {hm_avail}h/jour")
         print(f"  {'':22s}  {sign} {hm_needed:.1f}h nécessaires → ~{days_needed} jour(s)")
 
     print()

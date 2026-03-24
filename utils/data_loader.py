@@ -12,6 +12,21 @@ from models.recette import Recette, OperationRecette
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 
 
+def _normalize_date(date_str: str) -> str:
+    """
+    Normalize a date/datetime string to ISO date (YYYY-MM-DD).
+    Handles:
+      - "2026-04-15"
+      - "2026-04-15T00:00:00"
+      - "2026-04-23 23:00:00.0000000"
+    Returns None if empty/null.
+    """
+    if not date_str:
+        return None
+    # Take only the date part before any 'T' or space
+    return date_str.strip()[:10]
+
+
 def load_data() -> Tuple[List[Commande], List[Machine], Dict[int, List[OperationRecette]], Dict[int, Recette]]:
     paths = {
         "commandes":  os.path.join(DATA_DIR, "commandes.json"),
@@ -32,6 +47,12 @@ def load_data() -> Tuple[List[Commande], List[Machine], Dict[int, List[Operation
     with open(paths["operations"], encoding="utf-8") as f:
         raw_ops = json.load(f)["OperationsRecette"]
 
+    # Normalize datetime fields in commandes to plain ISO date strings
+    for c in raw_cmd:
+        c["DateExport"]       = _normalize_date(c.get("DateExport", ""))
+        c["DateCreation"]     = _normalize_date(c.get("DateCreation", "")) or ""
+        c["DateModification"] = _normalize_date(c.get("DateModification", "")) or ""
+
     commandes = [Commande(**c) for c in raw_cmd]
     machines  = [Machine(**m) for m in raw_mac]
 
@@ -39,7 +60,6 @@ def load_data() -> Tuple[List[Commande], List[Machine], Dict[int, List[Operation
 
     ops_by_recette: Dict[int, List[OperationRecette]] = {}
     for op in raw_ops:
-        # Provide defaults for backward compat if fields are missing
         op.setdefault("TempsChargementMinutes",  5)
         op.setdefault("TempsDecharementMinutes", 5)
         o = OperationRecette(**op)
@@ -58,8 +78,10 @@ def validate_data(
     recettes_by_id: Dict,
 ) -> List[str]:
     warnings = []
-    machines_ok   = [m for m in machines if m.is_available()]
-    ops_available = {op for m in machines_ok for op in m.operations_list()}
+    machines_ok = [m for m in machines if m.is_available()]
+
+    # Build a case-insensitive set of available operations
+    ops_available_lower = {op.lower() for m in machines_ok for op in m.operations_list()}
 
     for cmd in commandes:
         ops = ops_by_recette.get(cmd.RecetteId)
@@ -69,7 +91,7 @@ def validate_data(
             )
             continue
         for op in ops:
-            if op.NomOperation not in ops_available:
+            if op.NomOperation.lower() not in ops_available_lower:
                 warnings.append(
                     f"[{cmd.NumeroCommande}] Opération '{op.NomOperation}' "
                     f"sans machine fonctionnelle disponible"
