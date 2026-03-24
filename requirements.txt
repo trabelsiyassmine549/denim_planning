@@ -1,0 +1,20 @@
+# ─────────────────────────────────────────────────────────────
+# Denim Planning — Dépendances Python
+# ─────────────────────────────────────────────────────────────
+# Installation :  pip install -r requirements.txt
+
+# Moteur d'optimisation Google OR-Tools (CP-SAT solver)
+ortools>=9.8.0
+
+# Visualisation interactive (diagramme de Gantt)
+plotly>=5.18.0
+
+# Manipulation de données (construction du DataFrame Gantt)
+pandas>=2.0.0
+
+# (Optionnel) Ouvrir le HTML depuis le terminal sans navigateur
+# webbrowser est inclus dans la stdlib Python
+
+# ─────────────────────────────────────────────────────────────
+# Versions testées : Python 3.10+, ortools 9.9, plotly 5.20
+# ─────────────────────────────────────────────────────────────

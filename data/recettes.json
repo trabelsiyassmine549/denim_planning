@@ -1,0 +1,52 @@
+{
+  "Recettes": [
+    {
+      "Id": 1,
+      "NomRecette": "stonage_classique"
+    },
+    {
+      "Id": 2,
+      "NomRecette": "javel_leger"
+    },
+    {
+      "Id": 3,
+      "NomRecette": "javelisation_forte"
+    },
+    {
+      "Id": 4,
+      "NomRecette": "snow_legs"
+    },
+    {
+      "Id": 5,
+      "NomRecette": "rags_effect"
+    },
+    {
+      "Id": 6,
+      "NomRecette": "poudre_standard"
+    },
+    {
+      "Id": 7,
+      "NomRecette": "atoms_delave"
+    },
+    {
+      "Id": 8,
+      "NomRecette": "blanchiment_total"
+    },
+    {
+      "Id": 9,
+      "NomRecette": "stonage_javel"
+    },
+    {
+      "Id": 10,
+      "NomRecette": "stonage_snow"
+    },
+    {
+      "Id": 11,
+      "NomRecette": "poudre_atoms"
+    },
+    {
+      "Id": 12,
+      "NomRecette": "javel_blanchiment"
+    }
+  ]
+}
