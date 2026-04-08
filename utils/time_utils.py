@@ -1,23 +1,23 @@
 """
 utils/time_utils.py — Productive-minute time model
 ===================================================
-Work hours: 08h00 to 00h00 (midnight) — 16 hours/day, no lunch break.
+Work hours: 00h00 to 00h00 (midnight-to-midnight) — 24 hours/day, continuous.
 
 ENCODING — "productive minutes" (PM):
-  PM 0    = 08h00  day 0
-  PM 959  = 23h59  day 0
-  PM 960  = 08h00  day 1
+  PM 0    = 00h00  day 0
+  PM 1439 = 23h59  day 0
+  PM 1440 = 00h00  day 1
   ...
 
 Constants:
-  PPD = 960   productive minutes per day  (16h x 60)
+  PPD = 1440   # 24 hours x 60 minutes per day
 """
 
 from datetime import date, timedelta
 
-PPD            = 960   # 16 hours x 60 minutes
-DAY_START_HOUR = 8
-DAY_HOURS      = 16
+PPD            = 1440   # 24 hours x 60 minutes
+DAY_START_HOUR = 0
+DAY_HOURS      = 24
 
 # Legacy aliases kept for backward compatibility
 MORN_MINS       = PPD
@@ -72,16 +72,14 @@ def pm_to_clock(pm: int) -> tuple:
     Convert a productive-minute value to (day_offset, hour, minute).
 
     Examples:
-      pm=0   -> (0,  8,  0)   08h00 day 0
-      pm=959 -> (0, 23, 59)   23h59 day 0
-      pm=960 -> (1,  8,  0)   08h00 day 1
+      pm=0    -> (0,  0,  0)   00h00 day 0
+      pm=1439 -> (0, 23, 59)   23h59 day 0
+      pm=1440 -> (1,  0,  0)   00h00 day 1
     """
     day = pm // PPD
     off = pm % PPD
-    h   = DAY_START_HOUR + off // 60
+    h   = off // 60
     m   = off % 60
-    if h >= 24:
-        h -= 24
     return day, h, m
 
 

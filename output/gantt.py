@@ -7,7 +7,7 @@ Generates a self-contained HTML file with:
   - A detail panel triggered by clicking any bar
   - A full operations table below the chart (original style)
 
-Time model: productive minutes (PM), 08h00-00h00, PPD=960 min/day.
+Time model: productive minutes (PM), 00h00-23h59, PPD=1440 min/day.
 """
 
 import json
@@ -17,8 +17,8 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Dict, List
 
-PPD       = 960
-DAY_START = 8
+PPD       = 1440
+DAY_START = 0
 
 CMD_PALETTE = [
     "#1D4ED8","#B91C1C","#15803D","#7C3AED","#C2410C","#0E7490","#9D174D",
@@ -58,10 +58,8 @@ def _wd_offset(start: date, target: date) -> int:
 def _pm_to_clock(pm: int):
     day = pm // PPD
     off = pm % PPD
-    h   = DAY_START + off // 60
+    h   = off // 60
     m   = off % 60
-    if h >= 24:
-        h -= 24
     return day, h, m
 
 
@@ -396,13 +394,13 @@ function buildHeader() {
     h += `<div style="position:absolute;left:${x.toFixed(1)}px;top:${t}px;width:${dayW().toFixed(1)}px;height:${HDR_SEG}px;
       background:#fefce8;border-right:2px solid #94a3b8;
       display:flex;align-items:center;justify-content:center;">
-      <span style="font-size:9px;font-weight:600;color:#92400e;">08h-00h</span></div>`;
+      <span style="font-size:9px;font-weight:600;color:#92400e;">00h-24h</span></div>`;
 
-    for (let hr = 0; hr <= 16; hr++) {
+    for (let hr = 0; hr <= 24; hr++) {
       const wallH = DAY_STRT + hr;
       const dispH = wallH >= 24 ? wallH - 24 : wallH;
       const tx = x + hr * 60 * PX;
-      const isEdge  = (hr===0||hr===16);
+      const isEdge  = (hr===0||hr===24);
       const isMajor = (hr%2===0);
       h += `<div style="position:absolute;left:${tx.toFixed(1)}px;top:${t}px;width:1px;
         height:${isEdge?HDR_SEG:isMajor?HDR_SEG*.6:HDR_SEG*.3}px;
@@ -457,7 +455,7 @@ function buildBody() {
     DATA.days.forEach((d,di)=>{
       const dx=di*dayW();
       bHtml += `<div style="position:absolute;left:${(dx+dayW()).toFixed(1)}px;top:0;width:2px;height:100%;background:#cbd5e1;opacity:.4;pointer-events:none;"></div>`;
-      for(let hr=2;hr<16;hr+=2){
+      for(let hr=2;hr<24;hr+=2){
         const gx=dx+hr*60*PX;
         bHtml += `<div style="position:absolute;left:${gx.toFixed(1)}px;top:0;width:1px;height:100%;background:rgba(100,116,139,.1);pointer-events:none;"></div>`;
       }
@@ -618,9 +616,9 @@ function closeDp() {
 (function(){
   const c=DATA.config, k=DATA.kpis;
   document.getElementById('sub').textContent=
-    `CP-SAT | ${k.n_cmds} commandes | ${k.n_machines} machines | 08h-00h (16h/jour) | ${c.generated_at}`;
+    `CP-SAT | ${k.n_cmds} commandes | ${k.n_machines} machines | 00h-24h (24h/jour) | ${c.generated_at}`;
   document.getElementById('foot').textContent=
-    `Planning Lavage Denim | CP-SAT | horaires 08h-00h | ${k.n_machines} machines | ${k.makespan_days} jour(s) | ${c.generated_at}`;
+    `Planning Lavage Denim | CP-SAT | horaires 00h-24h | ${k.n_machines} machines | ${k.makespan_days} jour(s) | ${c.generated_at}`;
   buildKpis();
   buildHeader();
   buildBody();
