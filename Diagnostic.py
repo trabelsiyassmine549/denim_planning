@@ -1,5 +1,5 @@
 """
-Diagnostic.py — Analyse de faisabilité du planning de lavage denim (schéma DB)
+Diagnostic.py — Feasibility analysis for the denim washing production planner.
 """
 import math
 import sys
@@ -15,9 +15,9 @@ from utils.time_utils import date_to_offset, WORK_MINS_PER_DAY
 URGENCE_LABELS = {1: "Urgent", 2: "Haute", 3: "Normal", 4: "Basse", 5: "Flexible"}
 
 
-def analyze():
+def analyze() -> None:
     print("=" * 80)
-    print("   DIAGNOSTIC — PLANNING LAVAGE DENIM")
+    print("   DIAGNOSTIC — DENIM WASHING PRODUCTION PLANNER")
     print("=" * 80)
     print()
 
@@ -25,133 +25,128 @@ def analyze():
 
     warnings = validate_data(commandes, machines, ops_by_recette, recettes_by_id)
     if warnings:
-        print("⚠️  Problèmes détectés :")
+        print("WARNINGS:")
         for w in warnings:
-            print(f"   • {w}")
+            print(f"  {w}")
         print()
 
-    # ── Ressources disponibles ────────────────────────────────────────────────
     machines_ok   = [m for m in machines if m.is_available()]
     machines_down = [m for m in machines if not m.is_available()]
 
-    print(f"🔧 MACHINES DISPONIBLES ({len(machines_ok)}/{len(machines)} fonctionnelles)")
+    print(f"MACHINES ({len(machines_ok)}/{len(machines)} functional)")
     print("-" * 80)
     for m in machines_ok:
-        print(f"  {m.Id:3d}  {m.NomMachine:15s} | cap={m.CapaciteMax:3d} pcs | {m.Operations}")
+        print(f"  {m.Id:3d}  {m.NomMachine:15s}  cap={m.CapaciteMax:3d}pcs  {m.Operations}")
     print()
 
     if machines_down:
-        print(f"⚠️  MACHINES HORS SERVICE ({len(machines_down)})")
+        print(f"OUT OF SERVICE ({len(machines_down)})")
         for m in machines_down:
-            print(f"  ❌ {m.Id} — {m.NomMachine}")
+            print(f"  {m.Id}  {m.NomMachine}")
         print()
 
-    # Capacité par opération (case-insensitive grouping)
-    cap_by_op: dict = {}
+    # Capacity per operation
+    cap_by_op: dict  = {}
     machines_by_op: dict = {}
     for m in machines_ok:
         for op in m.operations_list():
-            op_lower = op.lower()
-            cap_by_op[op_lower] = cap_by_op.get(op_lower, 0) + m.CapaciteMax
-            machines_by_op.setdefault(op_lower, []).append(m)
+            key = op.lower()
+            cap_by_op[key]   = cap_by_op.get(key, 0) + m.CapaciteMax
+            machines_by_op.setdefault(key, []).append(m)
 
-    print("📊 CAPACITÉ PAR OPÉRATION (machines fonctionnelles)")
+    print("CAPACITY BY OPERATION (functional machines only)")
     print("-" * 80)
-    for op_lower in sorted(cap_by_op):
-        nb = len(machines_by_op[op_lower])
-        print(f"  {op_lower:22s}: {nb:2d} machine(s) | capacité cumulée = {cap_by_op[op_lower]} pcs/cycle")
+    for op_key in sorted(cap_by_op):
+        nb = len(machines_by_op[op_key])
+        print(f"  {op_key:22s}: {nb:2d} machine(s) | cumulative capacity = {cap_by_op[op_key]} pcs/cycle")
     print()
 
-    # ── Analyse commandes ─────────────────────────────────────────────────────
-    print(f"📦 ANALYSE DES COMMANDES ({len(commandes)} commandes)")
+    # Order analysis
+    print(f"ORDERS ({len(commandes)} total)")
     print("-" * 80)
 
     all_ok = True
     for cmd in commandes:
         export_offset = date_to_offset(cmd.DateExport)
         ops           = ops_by_recette.get(cmd.RecetteId, [])
-        recette_name  = recettes_by_id.get(cmd.RecetteId, None)
+        recette       = recettes_by_id.get(cmd.RecetteId)
         urg_label     = URGENCE_LABELS.get(cmd.Urgence, f"Urgence {cmd.Urgence}")
 
         print(f"\n  {cmd.NumeroCommande}")
-        print(f"  Quantité: {cmd.Quantite} pcs | Urgence: {cmd.Urgence} ({urg_label}) | "
-              f"Recette: {recette_name.NomRecette if recette_name else '???'} (Id={cmd.RecetteId})")
+        print(f"  Qty={cmd.Quantite}pcs  Urgence={cmd.Urgence} ({urg_label})  "
+              f"Recette={recette.NomRecette if recette else '???'} (Id={cmd.RecetteId})")
         print(f"  Export: {cmd.DateExport} (J+{export_offset})")
 
         if not ops:
-            print(f"  ❌ RecetteId={cmd.RecetteId} sans opérations définies!")
+            print(f"  [ERROR] RecetteId={cmd.RecetteId} has no operations defined")
             all_ok = False
             continue
 
-        total_duree = 0
-        feasible    = True
+        total_dur = 0
+        feasible  = True
 
         for op in ops:
-            nb_cycles    = math.ceil(cmd.Quantite / op.QuantiteLot)
-            op_total_min = op.DureeMinutes * nb_cycles
-            total_duree += op_total_min
-            mach_avail   = machines_by_op.get(op.NomOperation.lower(), [])
-            status       = "✅" if mach_avail else "❌ AUCUNE MACHINE"
-            print(f"    • {op.NomOperation:22s} {op.DureeMinutes:3d}min × {nb_cycles} cycle(s)"
-                  f" = {op_total_min:4d}min | lot={op.QuantiteLot}pcs | {status}")
-            if not mach_avail:
+            nb_cycles  = math.ceil(cmd.Quantite / op.QuantiteLot)
+            op_dur     = op.DureeMinutes * nb_cycles
+            total_dur += op_dur
+            avail      = machines_by_op.get(op.NomOperation.lower(), [])
+            status     = "OK" if avail else "ERROR: NO MACHINE"
+            print(f"    {op.NomOperation:22s}  {op.DureeMinutes:3d}min x {nb_cycles:2d}  = {op_dur:5d}min  "
+                  f"lot={op.QuantiteLot}pcs  {status}")
+            if not avail:
                 feasible = False
                 all_ok   = False
 
         available_min = export_offset * WORK_MINS_PER_DAY
-        print(f"  Durée totale estimée : {total_duree} min")
-        print(f"  Temps disponible     : {available_min} min (J0 → J+{export_offset})")
+        print(f"  Estimated total : {total_dur} min")
+        print(f"  Available time  : {available_min} min (J0 to J+{export_offset})")
 
         if available_min <= 0:
-            print(f"  ❌ INFAISABLE : fenêtre temporelle nulle ou négative")
-            feasible = False
-            all_ok   = False
-        elif total_duree > available_min:
-            deficit = total_duree - available_min
-            print(f"  ❌ INFAISABLE : déficit de {deficit} min")
-            feasible = False
-            all_ok   = False
+            print(f"  [INFEASIBLE] Zero or negative time window")
+            all_ok = False
+        elif total_dur > available_min:
+            print(f"  [INFEASIBLE] Deficit of {total_dur - available_min} min")
+            all_ok = False
         elif not feasible:
-            print(f"  ❌ INFAISABLE : opération(s) sans machine")
+            print(f"  [INFEASIBLE] One or more operations have no available machine")
         else:
-            slack = available_min - total_duree
-            print(f"  ✅ FAISABLE — marge {slack} min ({slack / WORK_MINS_PER_DAY:.1f} jour(s))")
+            slack = available_min - total_dur
+            print(f"  [FEASIBLE]   Slack = {slack} min ({slack / WORK_MINS_PER_DAY:.1f} day(s))")
 
-    # ── Résumé ────────────────────────────────────────────────────────────────
+    # Summary
     print("\n" + "=" * 80)
-    print("RÉSUMÉ")
+    print("SUMMARY")
     print("=" * 80)
     if all_ok:
-        print("✅ Toutes les commandes semblent faisables avec les ressources actuelles.")
+        print("All orders appear feasible with current resources.")
     else:
-        print("❌ Certaines commandes présentent des problèmes de faisabilité.")
-        print("Actions recommandées :")
-        print("  1. Remettre en service les machines hors fonction")
-        print("  2. Réviser les dates d'export pour les commandes déficitaires")
-        print("  3. Réduire les quantités ou fractionner les commandes urgentes")
+        print("Some orders have feasibility issues.")
+        print("Recommended actions:")
+        print("  1. Bring out-of-service machines back online")
+        print("  2. Revise export dates for deficit orders")
+        print("  3. Reduce quantities or split urgent orders")
 
-    # ── Charge par opération ──────────────────────────────────────────────────
+    # Load by operation
     print("\n" + "=" * 80)
-    print("CHARGE ESTIMÉE PAR OPÉRATION")
+    print("ESTIMATED LOAD BY OPERATION")
     print("=" * 80)
 
     total_by_op: dict = {}
     for cmd in commandes:
         for op in ops_by_recette.get(cmd.RecetteId, []):
             nb_cyc = math.ceil(cmd.Quantite / op.QuantiteLot)
-            key = op.NomOperation.lower()
+            key    = op.NomOperation.lower()
             total_by_op[key] = total_by_op.get(key, 0) + op.DureeMinutes * nb_cyc
 
-    for op_lower in sorted(total_by_op):
-        total_min   = total_by_op[op_lower]
-        nb_mach     = len(machines_by_op.get(op_lower, []))
-        hm_needed   = total_min / 60
-        hm_avail    = nb_mach * 8
+    for op_key in sorted(total_by_op):
+        total_min  = total_by_op[op_key]
+        nb_mach    = len(machines_by_op.get(op_key, []))
+        hm_needed  = total_min / 60
+        hm_avail   = nb_mach * 8
         days_needed = math.ceil(hm_needed / hm_avail) if hm_avail else 999
-        sign        = "✅" if days_needed <= 20 else "⚠️ "
-        print(f"  {op_lower:22s}: {total_min:5d} min | {nb_mach} machine(s) × 8h = {hm_avail}h/jour")
-        print(f"  {'':22s}  {sign} {hm_needed:.1f}h nécessaires → ~{days_needed} jour(s)")
-
+        status     = "OK" if days_needed <= 20 else "WARNING: HIGH LOAD"
+        print(f"  {op_key:22s}: {total_min:6d} min  {nb_mach} machine(s) x 8h = {hm_avail}h/day")
+        print(f"  {'':22s}  {status}  {hm_needed:.1f}h needed -> ~{days_needed} day(s)")
     print()
 
 

@@ -1,17 +1,17 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
 
 @dataclass
 class ProductionTask:
-    NumeroCommande: str   # référence commande (NumeroCommande)
-    NomOperation: str     # stonage / javel / javelisation / snow legs / rags /
-                          # poudre / préparation poudre / ATOMS / blanchiment / rinçage
-    MachineId: int        # FK → Machines.Id
-    DureeMinutes: int     # durée réelle en minutes (depuis OperationRecette)
-    QuantiteLot: int      # taille du lot traité dans ce task
-    EarliestStart: int    # jour ouvré le plus tôt (offset en minutes)
-    LatestEnd: int        # jour ouvré limite (offset en minutes)
+    NumeroCommande: str
+    NomOperation: str
+    MachineId: int
+    DureeMinutes: int
+    QuantiteLot: int
+    EarliestStart: int
+    LatestEnd: int
 
-    # Remplis par le solver
+    # Filled by the solver
     Start: int = -1
     End: int = -1
     AssignedMachineId: int = -1

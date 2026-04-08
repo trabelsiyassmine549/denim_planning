@@ -1,9 +1,9 @@
 """
-utils/data_loader.py — Chargement et validation des données JSON
+utils/data_loader.py — Load and validate JSON data files.
 """
 import json
 import os
-from typing import Tuple, Dict, List
+from typing import Dict, List, Tuple
 
 from models.commande import Commande
 from models.machine import Machine
@@ -15,19 +15,19 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 def _normalize_date(date_str: str) -> str:
     """
     Normalize a date/datetime string to ISO date (YYYY-MM-DD).
-    Handles:
-      - "2026-04-15"
-      - "2026-04-15T00:00:00"
-      - "2026-04-23 23:00:00.0000000"
-    Returns None if empty/null.
+    Handles: "2026-04-15", "2026-04-15T00:00:00", "2026-04-23 23:00:00.0000000"
     """
     if not date_str:
         return None
-    # Take only the date part before any 'T' or space
     return date_str.strip()[:10]
 
 
-def load_data() -> Tuple[List[Commande], List[Machine], Dict[int, List[OperationRecette]], Dict[int, Recette]]:
+def load_data() -> Tuple[
+    List[Commande],
+    List[Machine],
+    Dict[int, List[OperationRecette]],
+    Dict[int, Recette],
+]:
     paths = {
         "commandes":  os.path.join(DATA_DIR, "commandes.json"),
         "machines":   os.path.join(DATA_DIR, "machines.json"),
@@ -36,7 +36,7 @@ def load_data() -> Tuple[List[Commande], List[Machine], Dict[int, List[Operation
     }
     for name, path in paths.items():
         if not os.path.exists(path):
-            raise FileNotFoundError(f"Fichier manquant : {path}")
+            raise FileNotFoundError(f"Missing data file: {path}")
 
     with open(paths["commandes"],  encoding="utf-8") as f:
         raw_cmd = json.load(f)["Commandes"]
@@ -79,21 +79,23 @@ def validate_data(
 ) -> List[str]:
     warnings = []
     machines_ok = [m for m in machines if m.is_available()]
-
-    # Build a case-insensitive set of available operations
-    ops_available_lower = {op.lower() for m in machines_ok for op in m.operations_list()}
+    ops_available_lower = {
+        op.lower()
+        for m in machines_ok
+        for op in m.operations_list()
+    }
 
     for cmd in commandes:
         ops = ops_by_recette.get(cmd.RecetteId)
         if not ops:
             warnings.append(
-                f"[{cmd.NumeroCommande}] RecetteId={cmd.RecetteId} sans opérations définies"
+                f"[{cmd.NumeroCommande}] RecetteId={cmd.RecetteId} has no defined operations"
             )
             continue
         for op in ops:
             if op.NomOperation.lower() not in ops_available_lower:
                 warnings.append(
-                    f"[{cmd.NumeroCommande}] Opération '{op.NomOperation}' "
-                    f"sans machine fonctionnelle disponible"
+                    f"[{cmd.NumeroCommande}] Operation '{op.NomOperation}' "
+                    f"has no available functional machine"
                 )
     return warnings
