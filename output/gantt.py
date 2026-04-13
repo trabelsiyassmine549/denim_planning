@@ -318,7 +318,7 @@ footer{padding:10px 20px;background:#fff;border-top:1px solid #e2e8f0;font-size:
   <thead><tr>
     <th>Machine</th><th>Commande</th><th>Operation</th>
     <th>Debut</th><th>Fin</th><th>Charg.</th><th>Cycle</th><th>Decharg.</th>
-    <th>Pieces</th><th>Qte totale</th>
+    <th>Lot</th><th>Pieces/lot</th><th>Qte totale</th>
   </tr></thead>
   <tbody id="tbody"></tbody>
 </table></div></div>
@@ -505,6 +505,7 @@ function buildTable() {
       <td style="font-family:monospace;color:#0891B2;">${t.dur_chg}min</td>
       <td style="font-family:monospace;color:#475569;">${t.dur_min}min</td>
       <td style="font-family:monospace;color:#EA580C;">${t.dur_dch}min</td>
+      <td style="font-family:monospace;color:#6366f1;font-weight:600;">${t.lot_idx+1}&thinsp;/&thinsp;${t.nb_lots}</td>
       <td style="font-family:monospace;color:#64748b;">${t.lot}pcs</td>
       <td style="font-family:monospace;color:#94a3b8;">${t.quantite.toLocaleString()}pcs</td>
     </tr>`
