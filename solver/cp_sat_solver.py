@@ -18,14 +18,18 @@ LOT SIZE RULE
 """
 
 import math
-import random
 import time
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
-from ortools.sat.python import cp_model
+try:
+    from ortools.sat.python import cp_model
+    HAS_ORTOOLS = True
+except ImportError:
+    HAS_ORTOOLS = False
 
-from utils.data_loader import load_data, validate_data
+from models.domain import Commande, Machine, OperationRecette
+from models.schemas import GanttRow
 from utils.time_utils import (
     PPD,
     START_DATE,
@@ -159,13 +163,6 @@ class LNSState:
             score   += math.sqrt(variance) * 0.01
         return score
 
-    def task_score(self, cmd_num: str, op_idx: int) -> float:
-        key = (cmd_num, op_idx)
-        if key not in self.assign:
-            return 0.0
-        machine = self.assign[key]
-        return float(self.machine_load.get(machine.Id, 0))
-
     def copy_assign(self) -> Tuple[dict, dict, dict, dict]:
         return (
             dict(self.assign),
@@ -209,26 +206,35 @@ def _construct_initial_solution(state: LNSState) -> None:
             state.assign_task(cmd, op_idx, op, machine)
 
 
-def _lns_destroy(state: LNSState, rng: random.Random) -> List[Tuple[str, int]]:
+def _lns_destroy(state: LNSState) -> List[Tuple[str, int]]:
+    """
+    Destroy strategy: select the top-N tasks by machine load (highest-loaded
+    machine first). This matches the original monolithic api.py exactly —
+    no randomness injected, which keeps the LNS deterministic and reproducible.
+    """
     all_keys  = list(state.assign.keys())
     n_destroy = max(1, int(len(all_keys) * DESTROY_RATIO))
-    scored    = [(state.task_score(k[0], k[1]), k) for k in all_keys]
-    scored.sort(key=lambda x: -x[0])
 
-    n_score  = max(1, int(n_destroy * 0.7))
-    n_random = n_destroy - n_score
-
-    to_destroy = [k for _, k in scored[:n_score]]
-    pool       = [k for _, k in scored[n_score:]]
-    if pool and n_random > 0:
-        to_destroy.extend(rng.sample(pool, min(n_random, len(pool))))
-    return to_destroy
+    # Score each task by the total load on its assigned machine
+    scored = sorted(
+        all_keys,
+        key=lambda k: -state.machine_load.get(
+            state.assign[k].Id, 0
+        ),
+    )
+    return scored[:n_destroy]
 
 
 def _lns_repair(state: LNSState, destroyed_keys: List[Tuple[str, int]]) -> None:
-    cmd_lookup      = {c.NumeroCommande: c for c in state.commandes}
-    tasks_to_repair = []
+    """
+    Repair strategy: unassign all destroyed tasks first, then re-assign them
+    in the same order they were destroyed (no re-sort). This matches the
+    original monolithic api.py exactly.
+    """
+    cmd_lookup = {c.NumeroCommande: c for c in state.commandes}
 
+    # Collect tasks to repair (unassign as we go)
+    tasks_to_repair = []
     for key in destroyed_keys:
         cmd_num, op_idx = key
         state.unassign_task(cmd_num, op_idx)
@@ -240,7 +246,7 @@ def _lns_repair(state: LNSState, destroyed_keys: List[Tuple[str, int]]) -> None:
             continue
         tasks_to_repair.append((cmd, op_idx, ops[op_idx]))
 
-    tasks_to_repair.sort(key=lambda t: _priority_score(t[0], state.ops_by_recette))
+    # Re-assign in original order (no priority re-sort — matches original)
     for cmd, op_idx, op in tasks_to_repair:
         machine = state._best_machine_for(cmd, op)
         if machine is None:
@@ -249,7 +255,6 @@ def _lns_repair(state: LNSState, destroyed_keys: List[Tuple[str, int]]) -> None:
 
 
 def run_lns(commandes, ops_by_recette, machines_ok) -> LNSState:
-    rng            = random.Random(RANDOM_SEED)
     machines_by_op = _build_machines_by_op(machines_ok)
     state          = LNSState(commandes, ops_by_recette, machines_by_op)
 
@@ -270,7 +275,7 @@ def run_lns(commandes, ops_by_recette, machines_ok) -> LNSState:
             break
 
         snapshot  = state.copy_assign()
-        destroyed = _lns_destroy(state, rng)
+        destroyed = _lns_destroy(state)
         _lns_repair(state, destroyed)
         new_score = state.score()
 
@@ -373,16 +378,13 @@ def _add_objective(model, commandes, ops_by_recette, task_vars, horizon):
     return makespan
 
 
-def _extract_results(commandes, ops_by_recette, task_vars, lns_state, solver):
-    results = []
+def _extract_results(commandes, ops_by_recette, task_vars, lns_state, solver) -> List[GanttRow]:
+    rows: List[GanttRow] = []
 
     for cmd in commandes:
         ops = ops_by_recette.get(cmd.RecetteId, [])
         if not ops:
             continue
-
-        deadline_day = date_to_day_offset(cmd.DateExport)
-        last_key     = (cmd.NumeroCommande, len(ops) - 1)
 
         for op_idx, op in enumerate(ops):
             key = (cmd.NumeroCommande, op_idx)
@@ -392,60 +394,45 @@ def _extract_results(commandes, ops_by_recette, task_vars, lns_state, solver):
 
             task_start_pm = solver.Value(tv["start"])
             nb_lots       = tv["NbLots"]
-            lot_size      = tv["LotSize"]          # effective lot size (recipe ∩ machine cap)
-            dur_one_lot   = op.DureeTotale
+            lot_size      = tv["LotSize"]
             machine       = lns_state.assign[key]
 
             for lot_idx in range(nb_lots):
-                s_pm = task_start_pm + lot_idx * dur_one_lot
-                e_pm = s_pm + dur_one_lot
-                s_day, s_h, s_m = pm_to_clock(s_pm)
-                e_day, e_h, e_m = pm_to_clock(e_pm)
-                d_start = working_day_date(s_day)
-                d_end   = working_day_date(e_day)
+                s_pm  = task_start_pm + lot_idx * op.DureeTotale
+                e_pm  = s_pm + op.DureeTotale
+                s_day = pm_to_clock(s_pm)[0]
+                e_day = pm_to_clock(e_pm)[0]
 
-                # Last lot may be smaller than lot_size
-                pieces_this_lot = (
+                pieces = (
                     cmd.Quantite - lot_idx * lot_size
                     if lot_idx == nb_lots - 1
                     else lot_size
                 )
 
-                results.append({
-                    "NumeroCommande":          cmd.NumeroCommande,
-                    "Quantite":                cmd.Quantite,
-                    "RecetteId":               cmd.RecetteId,
-                    "Urgence":                 cmd.Urgence,
-                    "NomOperation":            op.NomOperation,
-                    "MachineId":               machine.Id,
-                    "MachineName":             f"{machine.Id} ({machine.NomMachine})",
-                    "StartPM":                 s_pm,
-                    "EndPM":                   e_pm,
-                    "DureeMinutes":            op.DureeMinutes,
-                    "TempsChargementMinutes":  op.TempsChargementMinutes,
-                    "TempsDecharementMinutes": op.TempsDecharementMinutes,
-                    "DureeTotale":             op.DureeTotale,
-                    "NbCycles":                1,
-                    "LotSize":                 pieces_this_lot,  # pcs in THIS lot
-                    "QuantiteLot":             lot_size,         # target lot size
-                    "LotIdx":                  lot_idx,
-                    "NbLots":                  nb_lots,
-                    "DateStart":               d_start.isoformat(),
-                    "DateEnd":                 d_end.isoformat(),
-                    "DateExport":              cmd.DateExport,
-                })
+                rows.append(GanttRow(
+                    numeroCommande          = cmd.NumeroCommande,
+                    quantite                = cmd.Quantite,
+                    recetteId               = cmd.RecetteId,
+                    urgence                 = cmd.Urgence,
+                    nomOperation            = op.NomOperation,
+                    machineId               = machine.Id,
+                    machineName             = machine.NomMachine,
+                    startPM                 = s_pm,
+                    endPM                   = e_pm,
+                    dureeMinutes            = op.DureeMinutes,
+                    tempsChargementMinutes  = op.TempsChargementMinutes,
+                    tempsDecharementMinutes = op.TempsDecharementMinutes,
+                    dureeTotale             = op.DureeTotale,
+                    lotSize                 = pieces,
+                    quantiteLot             = lot_size,
+                    lotIdx                  = lot_idx,
+                    nbLots                  = nb_lots,
+                    dateStart               = working_day_date(s_day).isoformat(),
+                    dateEnd                 = working_day_date(e_day).isoformat(),
+                    dateExport              = cmd.DateExport,
+                ))
 
-        if last_key in task_vars:
-            fin_pm       = solver.Value(task_vars[last_key]["end"])
-            deadline_pm  = date_to_pm(cmd.DateExport)   # = (deadline_day + 1) * PPD
-            if fin_pm > deadline_pm:
-                fin_day  = fin_pm // PPD
-                print(f"  [RETARD] {cmd.NumeroCommande}: fini jour {fin_day} > deadline jour {deadline_day}")
-            else:
-                slack_days = (deadline_pm - fin_pm) // PPD
-                print(f"  [OK]     {cmd.NumeroCommande}: marge ~{slack_days} jour(s)")
-
-    return results
+    return rows
 
 
 def _print_machine_utilisation(lns_state: LNSState) -> None:
@@ -468,94 +455,170 @@ def _print_machine_utilisation(lns_state: LNSState) -> None:
 
 
 # ===========================================================================
-# Public entry point
+# Public API — used by api.py
 # ===========================================================================
 
-def solve() -> list:
+class SolverResult:
+    """Thin wrapper returned by run_cpsat so api.py stays decoupled from cp_model internals."""
+
+    def __init__(self, solver, task_vars, makespan_pm: int):
+        self._solver     = solver
+        self._task_vars  = task_vars
+        self.makespan_pm = makespan_pm
+
+    def extract_rows(self, commandes, ops_by_recette, lns_state) -> List[GanttRow]:
+        return _extract_results(commandes, ops_by_recette, self._task_vars, lns_state, self._solver)
+
+
+def run_cpsat(commandes, ops_by_recette, machines_ok, lns_state, horizon) -> SolverResult:
+    """
+    Build and solve the CP-SAT model.
+    Returns a SolverResult with makespan_pm and an extract_rows() method.
+    Raises RuntimeError if OR-Tools is unavailable or no solution is found.
+    """
+    if not HAS_ORTOOLS:
+        raise RuntimeError("OR-Tools is not installed")
+
+    model, task_vars, _ = _build_cp_model(
+        commandes, ops_by_recette, machines_ok, lns_state, horizon
+    )
+    makespan_var = _add_objective(model, commandes, ops_by_recette, task_vars, horizon)
+
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = MAX_SOLVE_SECONDS
+    solver.parameters.random_seed         = RANDOM_SEED
+    solver.parameters.num_search_workers  = 4
+    solver.parameters.log_search_progress = False
+
+    status = solver.Solve(model)
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        raise RuntimeError("CP-SAT found no feasible solution")
+
+    return SolverResult(solver, task_vars, solver.Value(makespan_var))
+
+
+def lns_fallback(commandes, ops_by_recette, lns_state) -> List[GanttRow]:
+    """
+    Greedy sequential schedule used when OR-Tools is unavailable.
+    Respects operation precedence and machine non-overlap (sequentially).
+    """
+    machine_end: Dict[int, int] = defaultdict(int)
+    rows: List[GanttRow] = []
+
+    for cmd in sorted(commandes, key=lambda c: c.Urgence):
+        ops      = ops_by_recette.get(cmd.RecetteId, [])
+        prev_end = 0
+
+        for op_idx, op in enumerate(ops):
+            key     = (cmd.NumeroCommande, op_idx)
+            machine = lns_state.assign.get(key)
+            if machine is None:
+                continue
+
+            nb_lots  = lns_state.nb_lots.get(key, 1)
+            lot_size = lns_state.lot_size.get(key, op.QuantiteLot)
+            s_pm     = max(machine_end[machine.Id], prev_end)
+            e_pm     = s_pm + op.DureeTotale * nb_lots
+
+            machine_end[machine.Id] = e_pm
+            prev_end                = e_pm
+
+            for lot_idx in range(nb_lots):
+                sp    = s_pm + lot_idx * op.DureeTotale
+                ep    = sp + op.DureeTotale
+                s_day = pm_to_clock(sp)[0]
+                e_day = pm_to_clock(ep)[0]
+                pieces = (
+                    cmd.Quantite - lot_idx * lot_size
+                    if lot_idx == nb_lots - 1
+                    else lot_size
+                )
+                rows.append(GanttRow(
+                    numeroCommande          = cmd.NumeroCommande,
+                    quantite                = cmd.Quantite,
+                    recetteId               = cmd.RecetteId,
+                    urgence                 = cmd.Urgence,
+                    nomOperation            = op.NomOperation,
+                    machineId               = machine.Id,
+                    machineName             = machine.NomMachine,
+                    startPM                 = sp,
+                    endPM                   = ep,
+                    dureeMinutes            = op.DureeMinutes,
+                    tempsChargementMinutes  = op.TempsChargementMinutes,
+                    tempsDecharementMinutes = op.TempsDecharementMinutes,
+                    dureeTotale             = op.DureeTotale,
+                    lotSize                 = pieces,
+                    quantiteLot             = lot_size,
+                    lotIdx                  = lot_idx,
+                    nbLots                  = nb_lots,
+                    dateStart               = working_day_date(s_day).isoformat(),
+                    dateEnd                 = working_day_date(e_day).isoformat(),
+                    dateExport              = cmd.DateExport,
+                ))
+
+    return rows
+
+
+# ===========================================================================
+# Public entry point (standalone CLI)
+# ===========================================================================
+ 
+def solve() -> List[GanttRow]:
+    """
+    Full solve pipeline for CLI / standalone use.
+    Loads data via utils.data_loader, runs LNS → CP-SAT, returns Gantt rows.
+    """
+    from utils.data_loader import load_data, validate_data   # type: ignore
+
     commandes, machines, ops_by_recette, recettes_by_id = load_data()
 
-    warnings = validate_data(commandes, machines, ops_by_recette, recettes_by_id)
-    for w in warnings:
+    for w in validate_data(commandes, machines, ops_by_recette, recettes_by_id):
         print(f"WARNING: {w}")
 
     machines_ok = [m for m in machines if m.is_available()]
-
-    print(f"Loaded {len(commandes)} orders | {len(machines_ok)}/{len(machines)} machines available")
+    print(
+        f"Loaded {len(commandes)} orders | "
+        f"{len(machines_ok)}/{len(machines)} machines available"
+    )
     print(f"Schedule: 00h00 to 00h00  |  PPD = {PPD} min/day")
 
-    separator = "=" * 70
-    print(f"\n{separator}")
-    print("  LAYER 1 — COUCHE HEURISTIQUE  (Large Neighborhood Search)")
-    print(f"{separator}")
+    sep = "=" * 70
+    print(f"\n{sep}\n  LAYER 1 — COUCHE HEURISTIQUE  (Large Neighborhood Search)\n{sep}")
 
     lns_state = run_lns(commandes, ops_by_recette, machines_ok)
-
-    print(f"  {len(lns_state.assign)} tasks assigned across "
-          f"{len({m.Id for m in lns_state.assign.values()})} machines")
+    print(
+        f"  {len(lns_state.assign)} tasks assigned across "
+        f"{len({m.Id for m in lns_state.assign.values()})} machines"
+    )
     _print_machine_utilisation(lns_state)
 
     max_export_day = max(date_to_day_offset(c.DateExport) for c in commandes)
     horizon        = (max_export_day + 15) * PPD
 
-    print(f"\n{separator}")
-    print("  LAYER 2 — COUCHE CP-SAT  (timing optimisation)")
-    print(f"{separator}")
+    print(f"\n{sep}\n  LAYER 2 — COUCHE CP-SAT  (timing optimisation)\n{sep}")
     print(f"  Building CP-SAT model  |  horizon = {horizon} PM ({horizon // PPD} days) ...")
 
-    model, task_vars, machine_itvs = _build_cp_model(
-        commandes, ops_by_recette, machines_ok, lns_state, horizon,
+    result = run_cpsat(commandes, ops_by_recette, machines_ok, lns_state, horizon)
+
+    ms        = result.makespan_pm
+    ms_day    = ms // PPD
+    ms_rem    = ms % PPD
+    ms_h, ms_min = ms_rem // 60, ms_rem % 60
+    ms_str    = (
+        f"{ms_h}h{ms_min:02d}min  ({ms} productive minutes)"
+        if ms_day == 0
+        else f"{ms_day} working day(s)  ({ms} productive minutes)"
     )
-    makespan = _add_objective(model, commandes, ops_by_recette, task_vars, horizon)
-    print(f"  {len(task_vars)} task variables  |  "
-          f"{sum(len(v) for v in machine_itvs.values())} interval constraints")
-
-    print(f"\n{separator}")
-    print(f"  SOLVING  |  time limit = {MAX_SOLVE_SECONDS}s  |  seed = {RANDOM_SEED}")
-    print(f"{separator}")
-
-    solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = MAX_SOLVE_SECONDS
-    solver.parameters.random_seed         = RANDOM_SEED
-    solver.parameters.num_search_workers  = 8
-    solver.parameters.log_search_progress = False
-
-    t0      = time.time()
-    status  = solver.Solve(model)
-    elapsed = time.time() - t0
-
-    STATUS_LABELS = {
-        cp_model.OPTIMAL:    "OPTIMAL",
-        cp_model.FEASIBLE:   "FEASIBLE (time limit reached)",
-        cp_model.INFEASIBLE: "INFEASIBLE",
-        cp_model.UNKNOWN:    "UNKNOWN (timeout before first solution)",
-    }
-    label = STATUS_LABELS.get(status, f"UNKNOWN (code={status})")
-    print(f"\n  Status  : {label}")
-    print(f"  Elapsed : {elapsed:.1f}s")
-
-    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        print("No solution found. Exiting.")
-        return []
-
-    ms     = solver.Value(makespan)
-    ms_day = ms // PPD
-    ms_rem = ms % PPD
-    if ms_day == 0:
-        ms_h   = ms_rem // 60
-        ms_min = ms_rem % 60
-        ms_str = f"{ms_h}h{ms_min:02d}min  ({ms} productive minutes)"
-    else:
-        ms_str = f"{ms_day} working day(s)  ({ms} productive minutes)"
     print(f"  Makespan: {ms_str}")
     print(f"  Start   : {START_DATE}")
     print(f"  End     : {fmt_date(ms_day)}")
-    print(f"{separator}\n")
+    print(f"{sep}\n")
 
     print("Extracting results (per-lot expansion) ...")
-    results = _extract_results(commandes, ops_by_recette, task_vars, lns_state, solver)
-    print(f"\nDone. {len(results)} Gantt rows generated.")
-    return results
-
-
+    rows = result.extract_rows(commandes, ops_by_recette, lns_state)
+    print(f"\nDone. {len(rows)} Gantt rows generated.")
+    return rows
+ 
+ 
 if __name__ == "__main__":
     solve()

@@ -1,7 +1,7 @@
 """
 utils/time_utils.py — Productive-minute time model
 ===================================================
-Work hours: 00h00 to 00h00 (midnight-to-midnight) — 24 hours/day, continuous.
+Work hours: 00h00 to 00h00 (midnight-to-midnight) — 24 hours/day, 7 days/week.
 
 ENCODING — "productive minutes" (PM):
   PM 0    = 00h00  day 0
@@ -20,9 +20,9 @@ DAY_START_HOUR = 0
 DAY_HOURS      = 24
 
 # Legacy aliases kept for backward compatibility
-MORN_MINS       = PPD
-AFTN_MINS       = 0
-LUNCH_START     = PPD
+MORN_MINS         = PPD
+AFTN_MINS         = 0
+LUNCH_START       = PPD
 WORK_MINS_PER_DAY = PPD
 
 START_DATE = date.today()
@@ -34,28 +34,23 @@ JOURS_FR   = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
 # ---------------------------------------------------------------------------
 
 def working_day_date(offset_days: int) -> date:
-    """Return the calendar date of working day `offset_days` from START_DATE (weekends skipped)."""
-    if offset_days <= 0:
-        return START_DATE
-    d, n = START_DATE, 0
-    while n < offset_days:
-        d += timedelta(days=1)
-        if d.weekday() < 5:
-            n += 1
-    return d
+    """
+    Return the calendar date `offset_days` days from START_DATE.
+    No weekend skipping — the workshop runs 24/7.
+    """
+    return START_DATE + timedelta(days=max(offset_days, 0))
 
 
 def date_to_day_offset(iso_date: str) -> int:
-    """Convert an ISO date string to a working-day offset from START_DATE."""
+    """
+    Convert an ISO date string to a calendar-day offset from START_DATE.
+    Returns minimum 1 so deadlines today or in the past still get
+    a non-zero PM deadline for the solver.
+    No weekend skipping — the workshop runs 24/7.
+    """
     target = date.fromisoformat(iso_date)
-    if target <= START_DATE:
-        return 0
-    d, count = START_DATE, 0
-    while d < target:
-        d += timedelta(days=1)
-        if d.weekday() < 5:
-            count += 1
-    return count
+    delta  = (target - START_DATE).days
+    return max(delta, 1)
 
 
 # Legacy alias used by Diagnostic.py
@@ -94,7 +89,7 @@ def pm_to_date(pm: int) -> date:
 
 
 def date_to_pm(iso_date: str) -> int:
-    """Convert an export deadline to a productive-minute deadline (end of that working day)."""
+    """Convert an export deadline to a productive-minute deadline (end of that calendar day)."""
     return date_to_day_offset(iso_date) * PPD + PPD
 
 
