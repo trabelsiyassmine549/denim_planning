@@ -3,13 +3,13 @@ models/schemas.py — Pydantic request / response schemas for the FastAPI layer
 """
 
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RunRequest(BaseModel):
     token:        str
     commandeIds:  Optional[List[int]] = None   # None → all "En attente"
-
+    maxMachinesPerOp: int = Field(default=1, ge=1, le=3)# 1 min → 1 machine par opération, 2 → 2 machines par opération, 3max → 3 machines par opération  
 
 class GanttRow(BaseModel):
     numeroCommande:          str

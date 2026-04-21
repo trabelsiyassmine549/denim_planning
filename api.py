@@ -3,12 +3,20 @@ api.py  —  FastAPI entry point for the Denim Washing Production Planner
 ========================================================================
 """
 
+import traceback
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from data.fetcher import load_live_data, validate
 from models.schemas import RunRequest, RunResponse
-from solver.cp_sat_solver import HAS_ORTOOLS, run_lns, run_cpsat, lns_fallback
+from solver.cp_sat_solver import (
+    HAS_ORTOOLS,
+    run_lns,
+    run_cpsat,
+    lns_fallback,
+    collect_split_warnings,
+)
 from utils.time_utils import PPD, START_DATE, date_to_day_offset
 
 # ---------------------------------------------------------------------------
@@ -29,6 +37,7 @@ app.add_middleware(
 # Endpoints
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/planning/health")
 async def health():
     return {
@@ -41,10 +50,22 @@ async def health():
 @app.post("/api/planning/run", response_model=RunResponse)
 async def run_planning(req: RunRequest):
 
+    print(f"\n{'='*60}")
+    print(f"[API] POST /api/planning/run")
+    print(f"[API] commandeIds = {req.commandeIds}")
+    print(f"[API] maxMachinesPerOp = {req.maxMachinesPerOp}")
+    print(f"{'='*60}")
+
     # 1. Load live data from .NET
-    commandes, machines, ops_by_recette = await load_live_data(
-        req.token, req.commandeIds
-    )
+    try:
+        commandes, machines, ops_by_recette = await load_live_data(
+            req.token, req.commandeIds
+        )
+    except Exception as e:
+        print(f"[API] ERROR loading data: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Data loading error: {str(e)}")
+
+    print(f"[API] Loaded {len(commandes)} commandes, {len(machines)} machines")
 
     if not commandes:
         raise HTTPException(status_code=400, detail="No 'En attente' commandes found")
@@ -53,14 +74,45 @@ async def run_planning(req: RunRequest):
     if not machines_ok:
         raise HTTPException(status_code=400, detail="No functional machines available")
 
+    print(f"[API] {len(machines_ok)} machines available")
+
     warnings = validate(commandes, machines, ops_by_recette)
+    if warnings:
+        print(f"[API] Validation warnings: {warnings}")
+
+    # Clamp maxMachinesPerOp to [1, 3]
+    max_machines_per_op = max(1, min(3, req.maxMachinesPerOp))
+    print(f"[API] Using max_machines_per_op = {max_machines_per_op}")
 
     # 2. LNS — machine assignment heuristic
-    lns_state = run_lns(commandes, ops_by_recette, machines_ok)
+    try:
+        lns_state = run_lns(
+            commandes, ops_by_recette, machines_ok,
+            max_machines_per_op=max_machines_per_op,
+        )
+    except Exception as e:
+        print(f"[API] ERROR in LNS: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"LNS solver error: {str(e)}")
+
+    # Collect warnings about operations that could not be split as requested
+    if max_machines_per_op > 1:
+        try:
+            split_warnings = collect_split_warnings(
+                commandes, ops_by_recette, lns_state, max_machines_per_op
+            )
+            warnings = warnings + split_warnings
+        except Exception as e:
+            print(f"[API] WARNING: collect_split_warnings failed: {e}")
 
     # 3a. Fallback if OR-Tools not installed
     if not HAS_ORTOOLS:
-        rows = lns_fallback(commandes, ops_by_recette, lns_state)
+        print("[API] OR-Tools not available, using LNS fallback")
+        try:
+            rows = lns_fallback(commandes, ops_by_recette, lns_state)
+        except Exception as e:
+            print(f"[API] ERROR in LNS fallback: {traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"LNS fallback error: {str(e)}")
+
         makespan_pm = max((r.endPM for r in rows), default=0)
 
         return RunResponse(
@@ -73,18 +125,29 @@ async def run_planning(req: RunRequest):
         )
 
     # 3b. CP-SAT — timing optimisation
-    max_export_day = max(date_to_day_offset(c.DateExport) for c in commandes)
-    horizon        = (max_export_day + 15) * PPD
+    try:
+        max_export_day = max(date_to_day_offset(c.DateExport) for c in commandes)
+        horizon        = (max_export_day + 15) * PPD
+        print(f"[API] CP-SAT horizon = {horizon} PM ({horizon // PPD} days)")
 
-    # ✅ FIX: use SolverResult instead of unpacking
-    result = run_cpsat(
-        commandes, ops_by_recette, machines_ok, lns_state, horizon
-    )
+        result = run_cpsat(
+            commandes, ops_by_recette, machines_ok, lns_state, horizon
+        )
+    except RuntimeError as e:
+        print(f"[API] CP-SAT RuntimeError: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        print(f"[API] ERROR in CP-SAT: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"CP-SAT error: {str(e)}")
 
-    makespan_pm = result.makespan_pm
+    try:
+        makespan_pm = result.makespan_pm
+        rows = result.extract_rows(commandes, ops_by_recette, lns_state)
+    except Exception as e:
+        print(f"[API] ERROR extracting results: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Result extraction error: {str(e)}")
 
-    # ✅ FIX: use result.extract_rows()
-    rows = result.extract_rows(commandes, ops_by_recette, lns_state)
+    print(f"[API] Done. makespan={makespan_pm} PM, {len(rows)} rows generated")
 
     # 4. Response
     return RunResponse(

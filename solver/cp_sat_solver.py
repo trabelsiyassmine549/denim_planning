@@ -2,6 +2,16 @@
 solver/cp_sat_solver.py — Denim Washing Production Scheduler
 =============================================================
 
+FIXES:
+  - collect_split_warnings: guard on missing machines_by_op attribute
+  - _build_cp_model: skip slices with dur <= 0 OR dur >= horizon (was: only dur <= 0)
+  - unassign_task: use op.DureeTotale directly (was computing from task_load which
+    could be stale/wrong after partial updates)
+  - _best_n_machines_for: returns [] safely when op_key missing
+  - lns_fallback: guard on empty distribution
+  - collect_split_warnings: message clair quand 1 seule machine dispo
+    vs quand les lots sont trop peu pour être divisés
+
 HYBRID ARCHITECTURE
 -------------------
 LAYER 1 — COUCHE HEURISTIQUE (Large Neighborhood Search)
@@ -11,10 +21,14 @@ LOT SIZE RULE
 -------------
     lot_size = min(op.QuantiteLot, machine.CapaciteMax, cmd.Quantite)
 
-    The recipe defines the target lot size (op.QuantiteLot).
-    The machine capacity is a hard physical ceiling (machine.CapaciteMax).
-    The command quantity is the upper bound (cmd.Quantite).
-    The smallest of the three wins.
+MULTI-MACHINE SPLITTING
+------------------------
+    When max_machines_per_op > 1, the LNS may split an operation's lots
+    across up to max_machines_per_op different machines of the same type.
+    Each machine receives a contiguous slice of lots (round-robin by lot
+    count).  The CP-SAT layer then optimises the start times of each
+    machine-slice independently while still respecting operation precedence
+    (all slices of op i must finish before any slice of op i+1 starts).
 """
 
 import math
@@ -44,10 +58,10 @@ from utils.time_utils import (
 # Global constants
 # ---------------------------------------------------------------------------
 
-LNS_ITERATIONS   = 300
-LNS_TIME_LIMIT   = 45.0
-DESTROY_RATIO    = 0.25
-RANDOM_SEED      = 42
+LNS_ITERATIONS    = 300
+LNS_TIME_LIMIT    = 45.0
+DESTROY_RATIO     = 0.25
+RANDOM_SEED       = 42
 MAX_SOLVE_SECONDS = 90
 TARDINESS_PENALTY = 100_000
 
@@ -59,23 +73,16 @@ def _urgency_weight(urgence: int) -> int:
 def _priority_score(cmd, ops_by_recette: dict) -> float:
     ops = ops_by_recette.get(cmd.RecetteId, [])
     total_duration = sum(op.DureeTotale for op in ops)
-
     deadline_pm = date_to_pm(cmd.DateExport)
-
-    # Higher score = higher priority (so we invert deadline)
     return (
-        cmd.Urgence * 1000        # strong priority
-        - deadline_pm             # earlier deadline = higher priority
-        + total_duration          # longer jobs get slight priority
+        cmd.Urgence * 1000
+        - deadline_pm
+        + total_duration
     )
 
 
 def _effective_lot_size(cmd, op, machine) -> int:
-    """
-    Effective lot size = min(recipe lot, machine capacity, order quantity).
-    The recipe is the reference; the machine capacity is the physical ceiling.
-    """
-    return min(op.QuantiteLot, machine.CapaciteMax, cmd.Quantite)
+    return max(1, min(op.QuantiteLot, machine.CapaciteMax, cmd.Quantite))
 
 
 # ===========================================================================
@@ -83,16 +90,27 @@ def _effective_lot_size(cmd, op, machine) -> int:
 # ===========================================================================
 
 class LNSState:
-    def __init__(self, commandes, ops_by_recette, machines_by_op):
-        self.commandes      = commandes
-        self.ops_by_recette = ops_by_recette
-        self.machines_by_op = machines_by_op
+    """
+    assign       : (cmd_num, op_idx) -> list[Machine]   ← list (multi-machine)
+    machine_load : machine_id -> total minutes
+    task_load    : (cmd_num, op_idx) -> total minutes for this task
+    lot_size     : (cmd_num, op_idx) -> effective lot size
+    nb_lots      : (cmd_num, op_idx) -> total number of lots
+    machine_lots : (cmd_num, op_idx) -> list[(machine, lots_for_that_machine)]
+    machines_by_op: op_name_lower -> list[Machine]  (kept for split-warnings)
+    """
 
-        self.assign:       Dict[Tuple[str, int], object] = {}
-        self.machine_load: Dict[int, int]                = defaultdict(int)
-        self.task_load:    Dict[Tuple[str, int], int]    = {}
-        self.lot_size:     Dict[Tuple[str, int], int]    = {}
-        self.nb_lots:      Dict[Tuple[str, int], int]    = {}
+    def __init__(self, commandes, ops_by_recette, machines_by_op):
+        self.commandes       = commandes
+        self.ops_by_recette  = ops_by_recette
+        self.machines_by_op  = machines_by_op   # FIX: always set, never missing
+
+        self.assign:       Dict[Tuple[str, int], List[object]] = {}
+        self.machine_load: Dict[int, int]                       = defaultdict(int)
+        self.task_load:    Dict[Tuple[str, int], int]           = {}
+        self.lot_size:     Dict[Tuple[str, int], int]           = {}
+        self.nb_lots:      Dict[Tuple[str, int], int]           = {}
+        self.machine_lots: Dict[Tuple[str, int], List[Tuple[object, int]]] = {}
 
     # -----------------------------------------------------------------------
     def _compute_task_load(self, cmd, op, machine) -> int:
@@ -105,40 +123,87 @@ class LNSState:
         candidates = self.machines_by_op.get(op_key, [])
         if not candidates:
             return None
-
-        # Choose machine with lowest projected load
         return min(
             candidates,
             key=lambda m: self.machine_load[m.Id] + self._compute_task_load(cmd, op, m)
         )
 
+    def _best_n_machines_for(self, cmd, op, n: int) -> List[object]:
+        """
+        Pick up to n distinct machines for this operation type, sorted by
+        current load (least loaded first).  Returns fewer than n if there
+        are not enough capable machines.
+        """
+        op_key = op.NomOperation.lower()
+        candidates = self.machines_by_op.get(op_key, [])
+        if not candidates:
+            return []
+        sorted_candidates = sorted(candidates, key=lambda m: self.machine_load[m.Id])
+        return sorted_candidates[:n]
+
     # -----------------------------------------------------------------------
-    def assign_task(self, cmd, op_idx: int, op, machine) -> None:
+    def assign_task(self, cmd, op_idx: int, op, machines_list: List[object]) -> None:
+        """
+        Assign a (possibly multi-machine) task.
+        machines_list: ordered list of machines; lots are distributed evenly.
+        """
+        if not machines_list:
+            return
+
         key = (cmd.NumeroCommande, op_idx)
+
+        # Remove old assignment if any
         if key in self.assign:
-            old_m    = self.assign[key]
-            old_load = self.task_load.get(key, 0)
-            self.machine_load[old_m.Id] -= old_load
+            for old_m, old_nb in self.machine_lots.get(key, []):
+                self.machine_load[old_m.Id] -= op.DureeTotale * old_nb
 
-        load = self._compute_task_load(cmd, op, machine)
-        self.assign[key]    = machine
-        self.task_load[key] = load
-        self.machine_load[machine.Id] += load
+        # Compute lot distribution
+        primary_machine = machines_list[0]
+        ls       = _effective_lot_size(cmd, op, primary_machine)
+        total_nb = max(1, math.ceil(cmd.Quantite / ls))
 
-        ls = _effective_lot_size(cmd, op, machine)
-        self.lot_size[key] = ls
-        self.nb_lots[key]  = math.ceil(cmd.Quantite / ls)
+        # Distribute lots as evenly as possible across machines
+        n_machines = len(machines_list)
+        base_lots, remainder = divmod(total_nb, n_machines)
+        distribution: List[Tuple[object, int]] = []
+        for i, m in enumerate(machines_list):
+            nb = base_lots + (1 if i < remainder else 0)
+            if nb > 0:
+                distribution.append((m, nb))
+                self.machine_load[m.Id] += op.DureeTotale * nb
 
-    def unassign_task(self, cmd_num: str, op_idx: int) -> Optional[object]:
+        self.assign[key]       = machines_list
+        self.machine_lots[key] = distribution
+        self.lot_size[key]     = ls
+        self.nb_lots[key]      = total_nb
+        self.task_load[key]    = op.DureeTotale * total_nb
+
+    def _unassign_with_op(self, cmd_num: str, op_idx: int, op) -> Optional[List[object]]:
+        """Unassign while properly subtracting machine loads using DureeTotale."""
         key = (cmd_num, op_idx)
         if key not in self.assign:
             return None
-        machine = self.assign.pop(key)
-        load    = self.task_load.pop(key, 0)
-        self.machine_load[machine.Id] -= load
+        machines = self.assign.pop(key)
+        for m, nb in self.machine_lots.pop(key, []):
+            self.machine_load[m.Id] -= op.DureeTotale * nb
+        self.task_load.pop(key, None)
         self.lot_size.pop(key, None)
         self.nb_lots.pop(key, None)
-        return machine
+        return machines
+
+    def unassign_task(self, cmd_num: str, op_idx: int) -> Optional[List[object]]:
+        """Unassign without op reference — avoid if possible (load correction is approximate)."""
+        key = (cmd_num, op_idx)
+        if key not in self.assign:
+            return None
+        machines  = self.assign.pop(key)
+        task_load = self.task_load.pop(key, 0)
+        nb_lots   = self.nb_lots.pop(key, 1)
+        for m, nb in self.machine_lots.pop(key, []):
+            per_lot = (task_load // nb_lots) if nb_lots > 0 else 0
+            self.machine_load[m.Id] -= per_lot * nb
+        self.lot_size.pop(key, None)
+        return machines
 
     # -----------------------------------------------------------------------
     def score(self) -> float:
@@ -163,25 +228,24 @@ class LNSState:
             score   += math.sqrt(variance) * 0.01
         return score
 
-    def copy_assign(self) -> Tuple[dict, dict, dict, dict]:
+    def copy_assign(self):
         return (
-            dict(self.assign),
+            {k: list(v) for k, v in self.assign.items()},
             dict(self.machine_load),
             dict(self.task_load),
             dict(self.lot_size),
+            dict(self.nb_lots),
+            {k: list(v) for k, v in self.machine_lots.items()},
         )
 
-    def restore_assign(self, snapshot: Tuple) -> None:
-        assign, machine_load, task_load, lot_size = snapshot
-        self.assign       = dict(assign)
+    def restore_assign(self, snapshot) -> None:
+        assign, machine_load, task_load, lot_size, nb_lots, machine_lots = snapshot
+        self.assign       = {k: list(v) for k, v in assign.items()}
         self.machine_load = defaultdict(int, machine_load)
         self.task_load    = dict(task_load)
         self.lot_size     = dict(lot_size)
-        for key, ls in self.lot_size.items():
-            cmd_num, op_idx = key
-            cmd = next((c for c in self.commandes if c.NumeroCommande == cmd_num), None)
-            if cmd:
-                self.nb_lots[key] = math.ceil(cmd.Quantite / ls)
+        self.nb_lots      = dict(nb_lots)
+        self.machine_lots = {k: list(v) for k, v in machine_lots.items()}
 
 
 def _build_machines_by_op(machines_ok: list) -> Dict[str, list]:
@@ -192,7 +256,7 @@ def _build_machines_by_op(machines_ok: list) -> Dict[str, list]:
     return idx
 
 
-def _construct_initial_solution(state: LNSState) -> None:
+def _construct_initial_solution(state: LNSState, max_machines_per_op: int = 1) -> None:
     sorted_cmds = sorted(
         state.commandes,
         key=lambda c: _priority_score(c, state.ops_by_recette),
@@ -200,66 +264,55 @@ def _construct_initial_solution(state: LNSState) -> None:
     for cmd in sorted_cmds:
         ops = state.ops_by_recette.get(cmd.RecetteId, [])
         for op_idx, op in enumerate(ops):
-            machine = state._best_machine_for(cmd, op)
-            if machine is None:
+            machines = state._best_n_machines_for(cmd, op, max_machines_per_op)
+            if not machines:
                 continue
-            state.assign_task(cmd, op_idx, op, machine)
+            state.assign_task(cmd, op_idx, op, machines)
 
 
 def _lns_destroy(state: LNSState) -> List[Tuple[str, int]]:
-    """
-    Destroy strategy: select the top-N tasks by machine load (highest-loaded
-    machine first). This matches the original monolithic api.py exactly —
-    no randomness injected, which keeps the LNS deterministic and reproducible.
-    """
     all_keys  = list(state.assign.keys())
     n_destroy = max(1, int(len(all_keys) * DESTROY_RATIO))
-
-    # Score each task by the total load on its assigned machine
     scored = sorted(
         all_keys,
         key=lambda k: -state.machine_load.get(
-            state.assign[k].Id, 0
+            state.assign[k][0].Id if state.assign[k] else 0, 0
         ),
     )
     return scored[:n_destroy]
 
 
-def _lns_repair(state: LNSState, destroyed_keys: List[Tuple[str, int]]) -> None:
-    """
-    Repair strategy: unassign all destroyed tasks first, then re-assign them
-    in the same order they were destroyed (no re-sort). This matches the
-    original monolithic api.py exactly.
-    """
+def _lns_repair(state: LNSState, destroyed_keys: List[Tuple[str, int]],
+                max_machines_per_op: int = 1) -> None:
     cmd_lookup = {c.NumeroCommande: c for c in state.commandes}
 
-    # Collect tasks to repair (unassign as we go)
     tasks_to_repair = []
     for key in destroyed_keys:
         cmd_num, op_idx = key
-        state.unassign_task(cmd_num, op_idx)
         cmd = cmd_lookup.get(cmd_num)
         if cmd is None:
             continue
         ops = state.ops_by_recette.get(cmd.RecetteId, [])
         if op_idx >= len(ops):
             continue
-        tasks_to_repair.append((cmd, op_idx, ops[op_idx]))
+        op = ops[op_idx]
+        state._unassign_with_op(cmd_num, op_idx, op)
+        tasks_to_repair.append((cmd, op_idx, op))
 
-    # Re-assign in original order (no priority re-sort — matches original)
     for cmd, op_idx, op in tasks_to_repair:
-        machine = state._best_machine_for(cmd, op)
-        if machine is None:
+        machines = state._best_n_machines_for(cmd, op, max_machines_per_op)
+        if not machines:
             continue
-        state.assign_task(cmd, op_idx, op, machine)
+        state.assign_task(cmd, op_idx, op, machines)
 
 
-def run_lns(commandes, ops_by_recette, machines_ok) -> LNSState:
+def run_lns(commandes, ops_by_recette, machines_ok,
+            max_machines_per_op: int = 1) -> LNSState:
     machines_by_op = _build_machines_by_op(machines_ok)
     state          = LNSState(commandes, ops_by_recette, machines_by_op)
 
-    print("  [LNS] Constructing initial solution ...")
-    _construct_initial_solution(state)
+    print(f"  [LNS] Constructing initial solution (max {max_machines_per_op} machine(s)/op) ...")
+    _construct_initial_solution(state, max_machines_per_op)
     best_score    = state.score()
     best_snapshot = state.copy_assign()
 
@@ -276,7 +329,7 @@ def run_lns(commandes, ops_by_recette, machines_ok) -> LNSState:
 
         snapshot  = state.copy_assign()
         destroyed = _lns_destroy(state)
-        _lns_repair(state, destroyed)
+        _lns_repair(state, destroyed, max_machines_per_op)
         new_score = state.score()
 
         if new_score < best_score:
@@ -297,9 +350,9 @@ def run_lns(commandes, ops_by_recette, machines_ok) -> LNSState:
 # ===========================================================================
 
 def _build_cp_model(commandes, ops_by_recette, machines_ok, lns_state, horizon):
-    model         = cp_model.CpModel()
-    task_vars     = {}
-    machine_itvs  = {m.Id: [] for m in machines_ok}
+    model        = cp_model.CpModel()
+    task_vars    = {}
+    machine_itvs = {m.Id: [] for m in machines_ok}
 
     for cmd in commandes:
         ops = ops_by_recette.get(cmd.RecetteId, [])
@@ -308,41 +361,80 @@ def _build_cp_model(commandes, ops_by_recette, machines_ok, lns_state, horizon):
             if key not in lns_state.assign:
                 continue
 
-            machine  = lns_state.assign[key]
-            lot_size = lns_state.lot_size[key]
-            nb_lots  = lns_state.nb_lots[key]
-            dur      = op.DureeTotale * nb_lots
+            distribution = lns_state.machine_lots.get(key, [])
+            if not distribution:
+                continue
 
-            s_var = model.NewIntVar(0, horizon - dur, f"s_{cmd.NumeroCommande}_{op_idx}")
-            e_var = model.NewIntVar(dur, horizon,     f"e_{cmd.NumeroCommande}_{op_idx}")
-            model.Add(e_var == s_var + dur)
+            lot_size = lns_state.lot_size.get(key, op.QuantiteLot)
+            nb_lots  = lns_state.nb_lots.get(key, 1)
 
-            iv = model.NewIntervalVar(s_var, dur, e_var, f"iv_{cmd.NumeroCommande}_{op_idx}")
-            machine_itvs[machine.Id].append(iv)
+            # Sanitize command number for CP-SAT variable names
+            safe_cmd = "".join(c if c.isalnum() or c == "_" else "_"
+                               for c in cmd.NumeroCommande)
+
+            slice_vars = []
+            for slice_idx, (machine, slice_nb) in enumerate(distribution):
+                dur = op.DureeTotale * slice_nb
+
+                # FIX: skip degenerate slices (0 duration OR too large for horizon)
+                if dur <= 0 or dur >= horizon:
+                    continue
+
+                s_ub = max(0, horizon - dur)
+                s_var = model.NewIntVar(0, s_ub,
+                    f"s_{safe_cmd}_{op_idx}_{slice_idx}")
+                e_var = model.NewIntVar(dur, horizon,
+                    f"e_{safe_cmd}_{op_idx}_{slice_idx}")
+                model.Add(e_var == s_var + dur)
+
+                iv = model.NewIntervalVar(s_var, dur, e_var,
+                    f"iv_{safe_cmd}_{op_idx}_{slice_idx}")
+                machine_itvs[machine.Id].append(iv)
+
+                slice_vars.append({
+                    "start":   s_var,
+                    "end":     e_var,
+                    "machine": machine,
+                    "nb_lots": slice_nb,
+                })
+
+            # Skip task entirely if no valid slices were built
+            if not slice_vars:
+                continue
 
             task_vars[key] = {
-                "start":                   s_var,
-                "end":                     e_var,
-                "NomOperation":            op.NomOperation,
-                "DureeMinutes":            op.DureeMinutes,
-                "TempsChargementMinutes":  op.TempsChargementMinutes,
-                "TempsDecharementMinutes": op.TempsDecharementMinutes,
-                "DureeTotale":             op.DureeTotale,
-                "LotSize":                 lot_size,
-                "NbLots":                  nb_lots,
+                "slices":                   slice_vars,
+                "NomOperation":             op.NomOperation,
+                "DureeMinutes":             op.DureeMinutes,
+                "TempsChargementMinutes":   op.TempsChargementMinutes,
+                "TempsDecharementMinutes":  op.TempsDecharementMinutes,
+                "DureeTotale":              op.DureeTotale,
+                "LotSize":                  lot_size,
+                "NbLots":                   nb_lots,
             }
 
     for m in machines_ok:
         if machine_itvs[m.Id]:
             model.AddNoOverlap(machine_itvs[m.Id])
 
+    # Operation precedence: all slices of op i must end before any slice of op i+1
     for cmd in commandes:
         ops = ops_by_recette.get(cmd.RecetteId, [])
         for i in range(len(ops) - 1):
             k0 = (cmd.NumeroCommande, i)
             k1 = (cmd.NumeroCommande, i + 1)
-            if k0 in task_vars and k1 in task_vars:
-                model.Add(task_vars[k1]["start"] >= task_vars[k0]["end"])
+            if k0 not in task_vars or k1 not in task_vars:
+                continue
+            ends0   = [sv["end"]   for sv in task_vars[k0]["slices"]]
+            starts1 = [sv["start"] for sv in task_vars[k1]["slices"]]
+            if not ends0 or not starts1:
+                continue
+            safe_cmd_p = "".join(c if c.isalnum() or c == "_" else "_"
+                                 for c in cmd.NumeroCommande)
+            max_end0 = model.NewIntVar(0, horizon, f"maxend_{safe_cmd_p}_{i}")
+            model.AddMaxEquality(max_end0, ends0)
+            for s1 in starts1:
+                model.Add(s1 >= max_end0)
 
     return model, task_vars, machine_itvs
 
@@ -359,12 +451,24 @@ def _add_objective(model, commandes, ops_by_recette, task_vars, horizon):
         if last_key not in task_vars:
             continue
 
-        end_var  = task_vars[last_key]["end"]
+        slices   = task_vars[last_key]["slices"]
+        end_vars = [sv["end"] for sv in slices]
+        if not end_vars:
+            continue
+
+        safe_cmd_o = "".join(c if c.isalnum() or c == "_" else "_"
+                              for c in cmd.NumeroCommande)
+        if len(end_vars) == 1:
+            end_var = end_vars[0]
+        else:
+            end_var = model.NewIntVar(0, horizon, f"cmdend_{safe_cmd_o}")
+            model.AddMaxEquality(end_var, end_vars)
+
         deadline = date_to_pm(cmd.DateExport)
         weight   = _urgency_weight(cmd.Urgence)
 
-        late = model.NewIntVar(-horizon, horizon, f"late_{cmd.NumeroCommande}")
-        tard = model.NewIntVar(0,        horizon, f"tard_{cmd.NumeroCommande}")
+        late = model.NewIntVar(-horizon, horizon, f"late_{safe_cmd_o}")
+        tard = model.NewIntVar(0,        horizon, f"tard_{safe_cmd_o}")
         model.Add(late == end_var - deadline)
         model.AddMaxEquality(tard, [late, model.NewConstant(0)])
         tard_terms.append((weight, tard))
@@ -373,6 +477,8 @@ def _add_objective(model, commandes, ops_by_recette, task_vars, horizon):
     makespan = model.NewIntVar(0, horizon, "makespan")
     if all_ends:
         model.AddMaxEquality(makespan, all_ends)
+    else:
+        model.Add(makespan == 0)
 
     model.Minimize(TARDINESS_PENALTY * sum(w * t for w, t in tard_terms) + makespan)
     return makespan
@@ -392,45 +498,50 @@ def _extract_results(commandes, ops_by_recette, task_vars, lns_state, solver) ->
             if not tv:
                 continue
 
-            task_start_pm = solver.Value(tv["start"])
-            nb_lots       = tv["NbLots"]
-            lot_size      = tv["LotSize"]
-            machine       = lns_state.assign[key]
+            lot_size  = tv["LotSize"]
+            nb_lots   = tv["NbLots"]
+            slices    = tv["slices"]
 
-            for lot_idx in range(nb_lots):
-                s_pm  = task_start_pm + lot_idx * op.DureeTotale
-                e_pm  = s_pm + op.DureeTotale
-                s_day = pm_to_clock(s_pm)[0]
-                e_day = pm_to_clock(e_pm)[0]
+            global_lot_idx = 0
+            for sv in slices:
+                slice_start_pm = solver.Value(sv["start"])
+                slice_nb       = sv["nb_lots"]
+                machine        = sv["machine"]
 
-                pieces = (
-                    cmd.Quantite - lot_idx * lot_size
-                    if lot_idx == nb_lots - 1
-                    else lot_size
-                )
+                for local_idx in range(slice_nb):
+                    s_pm  = slice_start_pm + local_idx * op.DureeTotale
+                    e_pm  = s_pm + op.DureeTotale
+                    s_day = pm_to_clock(s_pm)[0]
+                    e_day = pm_to_clock(e_pm)[0]
 
-                rows.append(GanttRow(
-                    numeroCommande          = cmd.NumeroCommande,
-                    quantite                = cmd.Quantite,
-                    recetteId               = cmd.RecetteId,
-                    urgence                 = cmd.Urgence,
-                    nomOperation            = op.NomOperation,
-                    machineId               = machine.Id,
-                    machineName             = machine.NomMachine,
-                    startPM                 = s_pm,
-                    endPM                   = e_pm,
-                    dureeMinutes            = op.DureeMinutes,
-                    tempsChargementMinutes  = op.TempsChargementMinutes,
-                    tempsDecharementMinutes = op.TempsDecharementMinutes,
-                    dureeTotale             = op.DureeTotale,
-                    lotSize                 = pieces,
-                    quantiteLot             = lot_size,
-                    lotIdx                  = lot_idx,
-                    nbLots                  = nb_lots,
-                    dateStart               = working_day_date(s_day).isoformat(),
-                    dateEnd                 = working_day_date(e_day).isoformat(),
-                    dateExport              = cmd.DateExport,
-                ))
+                    if global_lot_idx == nb_lots - 1:
+                        pieces = cmd.Quantite - global_lot_idx * lot_size
+                    else:
+                        pieces = lot_size
+
+                    rows.append(GanttRow(
+                        numeroCommande          = cmd.NumeroCommande,
+                        quantite                = cmd.Quantite,
+                        recetteId               = cmd.RecetteId,
+                        urgence                 = cmd.Urgence,
+                        nomOperation            = op.NomOperation,
+                        machineId               = machine.Id,
+                        machineName             = machine.NomMachine,
+                        startPM                 = s_pm,
+                        endPM                   = e_pm,
+                        dureeMinutes            = op.DureeMinutes,
+                        tempsChargementMinutes  = op.TempsChargementMinutes,
+                        tempsDecharementMinutes = op.TempsDecharementMinutes,
+                        dureeTotale             = op.DureeTotale,
+                        lotSize                 = max(1, pieces),
+                        quantiteLot             = lot_size,
+                        lotIdx                  = global_lot_idx,
+                        nbLots                  = nb_lots,
+                        dateStart               = working_day_date(s_day).isoformat(),
+                        dateEnd                 = working_day_date(e_day).isoformat(),
+                        dateExport              = cmd.DateExport,
+                    ))
+                    global_lot_idx += 1
 
     return rows
 
@@ -439,10 +550,10 @@ def _print_machine_utilisation(lns_state: LNSState) -> None:
     load_by_machine  = defaultdict(int)
     tasks_by_machine = defaultdict(int)
 
-    for key, machine in lns_state.assign.items():
-        load = lns_state.task_load.get(key, 0)
-        load_by_machine[machine.Id]  += load
-        tasks_by_machine[machine.Id] += 1
+    for key, dist in lns_state.machine_lots.items():
+        for m, nb in dist:
+            load_by_machine[m.Id]  += lns_state.task_load.get(key, 0)
+            tasks_by_machine[m.Id] += 1
 
     print("\nMachine utilisation after LNS assignment (top 20 by load):")
     sorted_items = sorted(load_by_machine.items(), key=lambda x: -x[1])
@@ -455,12 +566,80 @@ def _print_machine_utilisation(lns_state: LNSState) -> None:
 
 
 # ===========================================================================
+# Split-warnings helper — exported to api.py
+# ===========================================================================
+
+def collect_split_warnings(commandes, ops_by_recette, lns_state: "LNSState",
+                            requested_machines: int) -> List[str]:
+    """
+    Returns warning strings for operations that could not be split across
+    as many machines as requested.
+
+    Rules:
+      - If an operation only has 1 machine available in the factory → hard warning.
+      - If it has enough machines but lots only filled fewer than requested → partial warning.
+    """
+    # FIX: guard — if machines_by_op attribute is missing or empty, return []
+    if not hasattr(lns_state, "machines_by_op") or not lns_state.machines_by_op:
+        return []
+
+    # op_name -> {"available": N, "actual": N}
+    limited_ops: Dict[str, Dict[str, int]] = {}
+
+    for cmd in commandes:
+        ops = ops_by_recette.get(cmd.RecetteId, [])
+        for op_idx, op in enumerate(ops):
+            key = (cmd.NumeroCommande, op_idx)
+            distribution = lns_state.machine_lots.get(key, [])
+            if not distribution:
+                continue
+            actual = len(distribution)
+            if actual < requested_machines:
+                op_key    = op.NomOperation.lower()
+                available = len(lns_state.machines_by_op.get(op_key, []))
+                op_name   = op.NomOperation
+                if op_name not in limited_ops:
+                    limited_ops[op_name] = {"available": available, "actual": actual}
+                else:
+                    if actual < limited_ops[op_name]["actual"]:
+                        limited_ops[op_name]["actual"]    = actual
+                        limited_ops[op_name]["available"] = available
+
+    if not limited_ops:
+        return []
+
+    warnings: List[str] = []
+
+    # True split into 3 cases based on the real root cause:
+    #
+    #   NOT_ENOUGH_MACHINES : available < requested
+    #       → the factory simply doesn't have enough machines of that type,
+    #         regardless of lot count.  actual == available (used all that exist).
+    #
+    #   NOT_ENOUGH_LOTS     : available >= requested but actual < requested
+    #       → enough machines exist but the order has too few lots to spread
+    #         across all of them.
+    #
+    # All emit: SPLIT_WARNING|<type>|<op>|<actual>|<available>|<requested>
+
+    for op_name, info in sorted(limited_ops.items()):
+        actual    = info["actual"]
+        available = info["available"]
+        if available < requested_machines:
+            kind = "NOT_ENOUGH_MACHINES"
+        else:
+            kind = "NOT_ENOUGH_LOTS"
+        warnings.append(
+            f"SPLIT_WARNING|{kind}|{op_name}|{actual}|{available}|{requested_machines}"
+        )
+    return warnings
+
+
+# ===========================================================================
 # Public API — used by api.py
 # ===========================================================================
 
 class SolverResult:
-    """Thin wrapper returned by run_cpsat so api.py stays decoupled from cp_model internals."""
-
     def __init__(self, solver, task_vars, makespan_pm: int):
         self._solver     = solver
         self._task_vars  = task_vars
@@ -471,11 +650,6 @@ class SolverResult:
 
 
 def run_cpsat(commandes, ops_by_recette, machines_ok, lns_state, horizon) -> SolverResult:
-    """
-    Build and solve the CP-SAT model.
-    Returns a SolverResult with makespan_pm and an extract_rows() method.
-    Raises RuntimeError if OR-Tools is unavailable or no solution is found.
-    """
     if not HAS_ORTOOLS:
         raise RuntimeError("OR-Tools is not installed")
 
@@ -492,7 +666,11 @@ def run_cpsat(commandes, ops_by_recette, machines_ok, lns_state, horizon) -> Sol
 
     status = solver.Solve(model)
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        raise RuntimeError("CP-SAT found no feasible solution")
+        raise RuntimeError(
+            f"CP-SAT n'a pas trouvé de solution faisable "
+            f"(status={solver.StatusName(status)}). "
+            f"Vérifiez que les machines et recettes sont cohérentes."
+        )
 
     return SolverResult(solver, task_vars, solver.Value(makespan_var))
 
@@ -500,7 +678,7 @@ def run_cpsat(commandes, ops_by_recette, machines_ok, lns_state, horizon) -> Sol
 def lns_fallback(commandes, ops_by_recette, lns_state) -> List[GanttRow]:
     """
     Greedy sequential schedule used when OR-Tools is unavailable.
-    Respects operation precedence and machine non-overlap (sequentially).
+    Supports multi-machine slices.
     """
     machine_end: Dict[int, int] = defaultdict(int)
     rows: List[GanttRow] = []
@@ -510,51 +688,59 @@ def lns_fallback(commandes, ops_by_recette, lns_state) -> List[GanttRow]:
         prev_end = 0
 
         for op_idx, op in enumerate(ops):
-            key     = (cmd.NumeroCommande, op_idx)
-            machine = lns_state.assign.get(key)
-            if machine is None:
+            key          = (cmd.NumeroCommande, op_idx)
+            distribution = lns_state.machine_lots.get(key, [])
+            # FIX: guard on empty distribution
+            if not distribution:
                 continue
 
             nb_lots  = lns_state.nb_lots.get(key, 1)
             lot_size = lns_state.lot_size.get(key, op.QuantiteLot)
-            s_pm     = max(machine_end[machine.Id], prev_end)
-            e_pm     = s_pm + op.DureeTotale * nb_lots
 
-            machine_end[machine.Id] = e_pm
-            prev_end                = e_pm
+            op_end         = prev_end
+            global_lot_idx = 0
 
-            for lot_idx in range(nb_lots):
-                sp    = s_pm + lot_idx * op.DureeTotale
-                ep    = sp + op.DureeTotale
-                s_day = pm_to_clock(sp)[0]
-                e_day = pm_to_clock(ep)[0]
-                pieces = (
-                    cmd.Quantite - lot_idx * lot_size
-                    if lot_idx == nb_lots - 1
-                    else lot_size
-                )
-                rows.append(GanttRow(
-                    numeroCommande          = cmd.NumeroCommande,
-                    quantite                = cmd.Quantite,
-                    recetteId               = cmd.RecetteId,
-                    urgence                 = cmd.Urgence,
-                    nomOperation            = op.NomOperation,
-                    machineId               = machine.Id,
-                    machineName             = machine.NomMachine,
-                    startPM                 = sp,
-                    endPM                   = ep,
-                    dureeMinutes            = op.DureeMinutes,
-                    tempsChargementMinutes  = op.TempsChargementMinutes,
-                    tempsDecharementMinutes = op.TempsDecharementMinutes,
-                    dureeTotale             = op.DureeTotale,
-                    lotSize                 = pieces,
-                    quantiteLot             = lot_size,
-                    lotIdx                  = lot_idx,
-                    nbLots                  = nb_lots,
-                    dateStart               = working_day_date(s_day).isoformat(),
-                    dateEnd                 = working_day_date(e_day).isoformat(),
-                    dateExport              = cmd.DateExport,
-                ))
+            for machine, slice_nb in distribution:
+                s_pm = max(machine_end[machine.Id], prev_end)
+                e_pm = s_pm + op.DureeTotale * slice_nb
+                machine_end[machine.Id] = e_pm
+                op_end = max(op_end, e_pm)
+
+                for local_idx in range(slice_nb):
+                    sp    = s_pm + local_idx * op.DureeTotale
+                    ep    = sp + op.DureeTotale
+                    s_day = pm_to_clock(sp)[0]
+                    e_day = pm_to_clock(ep)[0]
+                    if global_lot_idx == nb_lots - 1:
+                        pieces = cmd.Quantite - global_lot_idx * lot_size
+                    else:
+                        pieces = lot_size
+
+                    rows.append(GanttRow(
+                        numeroCommande          = cmd.NumeroCommande,
+                        quantite                = cmd.Quantite,
+                        recetteId               = cmd.RecetteId,
+                        urgence                 = cmd.Urgence,
+                        nomOperation            = op.NomOperation,
+                        machineId               = machine.Id,
+                        machineName             = machine.NomMachine,
+                        startPM                 = sp,
+                        endPM                   = ep,
+                        dureeMinutes            = op.DureeMinutes,
+                        tempsChargementMinutes  = op.TempsChargementMinutes,
+                        tempsDecharementMinutes = op.TempsDecharementMinutes,
+                        dureeTotale             = op.DureeTotale,
+                        lotSize                 = max(1, pieces),
+                        quantiteLot             = lot_size,
+                        lotIdx                  = global_lot_idx,
+                        nbLots                  = nb_lots,
+                        dateStart               = working_day_date(s_day).isoformat(),
+                        dateEnd                 = working_day_date(e_day).isoformat(),
+                        dateExport              = cmd.DateExport,
+                    ))
+                    global_lot_idx += 1
+
+            prev_end = op_end
 
     return rows
 
@@ -562,12 +748,8 @@ def lns_fallback(commandes, ops_by_recette, lns_state) -> List[GanttRow]:
 # ===========================================================================
 # Public entry point (standalone CLI)
 # ===========================================================================
- 
-def solve() -> List[GanttRow]:
-    """
-    Full solve pipeline for CLI / standalone use.
-    Loads data via utils.data_loader, runs LNS → CP-SAT, returns Gantt rows.
-    """
+
+def solve(max_machines_per_op: int = 1) -> List[GanttRow]:
     from utils.data_loader import load_data, validate_data   # type: ignore
 
     commandes, machines, ops_by_recette, recettes_by_id = load_data()
@@ -578,26 +760,21 @@ def solve() -> List[GanttRow]:
     machines_ok = [m for m in machines if m.is_available()]
     print(
         f"Loaded {len(commandes)} orders | "
-        f"{len(machines_ok)}/{len(machines)} machines available"
+        f"{len(machines_ok)}/{len(machines)} machines available | "
+        f"max {max_machines_per_op} machine(s)/op"
     )
-    print(f"Schedule: 00h00 to 00h00  |  PPD = {PPD} min/day")
 
     sep = "=" * 70
     print(f"\n{sep}\n  LAYER 1 — COUCHE HEURISTIQUE  (Large Neighborhood Search)\n{sep}")
 
-    lns_state = run_lns(commandes, ops_by_recette, machines_ok)
-    print(
-        f"  {len(lns_state.assign)} tasks assigned across "
-        f"{len({m.Id for m in lns_state.assign.values()})} machines"
-    )
+    lns_state = run_lns(commandes, ops_by_recette, machines_ok,
+                        max_machines_per_op=max_machines_per_op)
     _print_machine_utilisation(lns_state)
 
     max_export_day = max(date_to_day_offset(c.DateExport) for c in commandes)
-    horizon        = (max_export_day + 15) * PPD
+    horizon        = max((max_export_day + 15) * PPD, 1000)
 
     print(f"\n{sep}\n  LAYER 2 — COUCHE CP-SAT  (timing optimisation)\n{sep}")
-    print(f"  Building CP-SAT model  |  horizon = {horizon} PM ({horizon // PPD} days) ...")
-
     result = run_cpsat(commandes, ops_by_recette, machines_ok, lns_state, horizon)
 
     ms        = result.makespan_pm
@@ -610,15 +787,10 @@ def solve() -> List[GanttRow]:
         else f"{ms_day} working day(s)  ({ms} productive minutes)"
     )
     print(f"  Makespan: {ms_str}")
-    print(f"  Start   : {START_DATE}")
-    print(f"  End     : {fmt_date(ms_day)}")
-    print(f"{sep}\n")
-
-    print("Extracting results (per-lot expansion) ...")
     rows = result.extract_rows(commandes, ops_by_recette, lns_state)
     print(f"\nDone. {len(rows)} Gantt rows generated.")
     return rows
- 
- 
+
+
 if __name__ == "__main__":
     solve()
