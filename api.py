@@ -4,6 +4,7 @@ api.py  —  FastAPI entry point for the Denim Washing Production Planner
 """
 
 import traceback
+import httpx
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,13 +19,10 @@ from solver.cp_sat_solver import (
     collect_split_warnings,
 )
 from utils.time_utils import PPD, START_DATE, date_to_day_offset
-
-# ---------------------------------------------------------------------------
-# App
-# ---------------------------------------------------------------------------
+from chat import router as chat_router, OLLAMA_URL, OLLAMA_MODEL
 
 app = FastAPI(title="Denim Planner Optimiser", version="1.0.0")
-
+app.include_router(chat_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:4200", "https://localhost:4200"],
@@ -33,10 +31,31 @@ app.add_middleware(
     allow_methods=["*"],
 )
 
+
+# ---------------------------------------------------------------------------
+# Warmup — load the model into memory at startup so first request is fast
+# ---------------------------------------------------------------------------
+
+@app.on_event("startup")
+async def warmup_ollama():
+    print("[WARMUP] Pre-loading Ollama model into memory...")
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            await client.post(f"{OLLAMA_URL}/api/chat", json={
+                "model":      OLLAMA_MODEL,
+                "messages":   [{"role": "user", "content": "hi"}],
+                "stream":     False,
+                "keep_alive": "10m",
+                "options":    {"num_predict": 1},  # generate just 1 token — fast
+            })
+        print("[WARMUP] Model ready.")
+    except Exception as e:
+        print(f"[WARMUP] Could not pre-load model (Ollama may not be running): {e}")
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
-
 
 @app.get("/api/planning/health")
 async def health():
@@ -56,7 +75,6 @@ async def run_planning(req: RunRequest):
     print(f"[API] maxMachinesPerOp = {req.maxMachinesPerOp}")
     print(f"{'='*60}")
 
-    # 1. Load live data from .NET
     try:
         commandes, machines, ops_by_recette = await load_live_data(
             req.token, req.commandeIds
@@ -80,11 +98,9 @@ async def run_planning(req: RunRequest):
     if warnings:
         print(f"[API] Validation warnings: {warnings}")
 
-    # Clamp maxMachinesPerOp to [1, 3]
     max_machines_per_op = max(1, min(3, req.maxMachinesPerOp))
     print(f"[API] Using max_machines_per_op = {max_machines_per_op}")
 
-    # 2. LNS — machine assignment heuristic
     try:
         lns_state = run_lns(
             commandes, ops_by_recette, machines_ok,
@@ -94,7 +110,6 @@ async def run_planning(req: RunRequest):
         print(f"[API] ERROR in LNS: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"LNS solver error: {str(e)}")
 
-    # Collect warnings about operations that could not be split as requested
     if max_machines_per_op > 1:
         try:
             split_warnings = collect_split_warnings(
@@ -104,7 +119,6 @@ async def run_planning(req: RunRequest):
         except Exception as e:
             print(f"[API] WARNING: collect_split_warnings failed: {e}")
 
-    # 3a. Fallback if OR-Tools not installed
     if not HAS_ORTOOLS:
         print("[API] OR-Tools not available, using LNS fallback")
         try:
@@ -124,7 +138,6 @@ async def run_planning(req: RunRequest):
             warnings=warnings + ["OR-Tools not installed; LNS fallback used"],
         )
 
-    # 3b. CP-SAT — timing optimisation
     try:
         max_export_day = max(date_to_day_offset(c.DateExport) for c in commandes)
         horizon        = (max_export_day + 15) * PPD
@@ -149,7 +162,6 @@ async def run_planning(req: RunRequest):
 
     print(f"[API] Done. makespan={makespan_pm} PM, {len(rows)} rows generated")
 
-    # 4. Response
     return RunResponse(
         status="optimal" if makespan_pm < horizon else "feasible",
         makespanDays=makespan_pm // PPD,
