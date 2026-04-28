@@ -21,7 +21,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 
-from rag.rag_engine import analyze as rag_analyze   # RAG pipeline
+from rag.rag_engine import analyze as rag_analyze, _is_gibberish, _detect_language   # RAG pipeline
 
 router = APIRouter()
 
@@ -36,12 +36,20 @@ OLLAMA_OPTIONS = {
     "top_p":       0.8,
 }
 
-GENERAL_SYSTEM_PROMPT = """Tu es un assistant de planification industrielle pour l'atelier de lavage denim Micwic.
-Règles :
-- Réponses courtes et directes (2-4 phrases sauf si détail demandé).
-- Pratique et concret — pas d'introductions longues.
-- Réponds dans la langue de l'utilisateur (français ou anglais).
-- Si tu ne sais pas, dis-le clairement."""
+GENERAL_SYSTEM_PROMPT = """You are an industrial planning assistant for the Micwic denim washing workshop.
+
+LANGUAGE RULE — ABSOLUTE PRIORITY:
+Detect the language of the user's last message and respond in that EXACT language.
+- French question → French answer.
+- English question → English answer.
+- Never mix languages.
+
+Rules:
+- Short, direct answers (2–4 sentences unless more detail is explicitly requested).
+- No lengthy introductions. No "Sure!", no "Of course".
+- Practical and concrete.
+- If you don't know, say so clearly.
+- If the question is gibberish or incomprehensible, reply: "Je n'ai pas compris votre question. Pouvez-vous la reformuler ?" (French) or "I did not understand your question. Could you rephrase it?" (English)."""
 
 
 # ---------------------------------------------------------------------------
@@ -107,6 +115,16 @@ async def chat(req: ChatRequest):
         )
         if not user_question.strip():
             raise HTTPException(status_code=400, detail="Empty question")
+
+        # Gibberish guard — short-circuit before any DB/LLM calls
+        if _is_gibberish(user_question):
+            lang = _detect_language(user_question)
+            clarify = (
+                "I did not understand your question. Could you please rephrase it?"
+                if lang == 'en' else
+                "Je n'ai pas compris votre question. Pouvez-vous la reformuler ?"
+            )
+            return ChatResponse(reply=clarify, mode="rag")
 
         try:
             reply = await rag_analyze(
