@@ -2,8 +2,10 @@
 api.py  —  FastAPI entry point for the Denim Washing Production Planner
 ========================================================================
 UPDATED: Added RAG analysis endpoint + FAISS index startup
+         Schedule is anchored to a user-chosen datetime (or now if not provided).
 """
 
+from datetime import date, datetime
 import traceback
 import httpx
 
@@ -11,7 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from data.fetcher import load_live_data, validate
-from models.schemas import RunRequest, RunResponse
+from models.schemas import RunRequest, RunResponse, GanttRow
 from solver.cp_sat_solver import (
     HAS_ORTOOLS,
     run_lns,
@@ -19,14 +21,41 @@ from solver.cp_sat_solver import (
     lns_fallback,
     collect_split_warnings,
 )
-from utils.time_utils import PPD, START_DATE, date_to_day_offset
+from utils.time_utils import PPD, date_to_day_offset, working_day_date, pm_to_clock
 from chat import router as chat_router, OLLAMA_URL, OLLAMA_MODEL
-from rag.analyze_router import router as analyze_router       # ← NEW
-from rag.rag_engine import ensure_domain_knowledge_indexed    # ← NEW
+from rag.analyze_router import router as analyze_router
+from rag.rag_engine import ensure_domain_knowledge_indexed
+
+
+# ---------------------------------------------------------------------------
+# Helper — shift solver rows so PM=0 maps to the chosen start minute
+# ---------------------------------------------------------------------------
+
+def _shift_rows(rows: list, now_pm: int) -> list:
+    """
+    The solver produces PM values where PM=0 = 00h00 today.
+    Shift every startPM / endPM by now_pm so the schedule starts
+    at the actual chosen time, not midnight.
+    Also recompute dateStart / dateEnd to match the shifted times.
+    """
+    shifted = []
+    for r in rows:
+        s_pm = r.startPM + now_pm
+        e_pm = r.endPM   + now_pm
+        s_day = pm_to_clock(s_pm)[0]
+        e_day = pm_to_clock(e_pm)[0]
+        shifted.append(r.model_copy(update={
+            "startPM":   s_pm,
+            "endPM":     e_pm,
+            "dateStart": working_day_date(s_day).isoformat(),
+            "dateEnd":   working_day_date(e_day).isoformat(),
+        }))
+    return shifted
+
 
 app = FastAPI(title="Denim Planner Optimiser", version="2.0.0")
 app.include_router(chat_router)
-app.include_router(analyze_router)                            # ← NEW
+app.include_router(analyze_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:4200", "https://localhost:4200"],
@@ -82,28 +111,97 @@ async def startup():
 # Health
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Late-delivery warning helper
+# ---------------------------------------------------------------------------
+
+def _collect_late_warnings(rows: list, start_date) -> list[str]:
+    """
+    Compare each row's dateEnd against its dateExport.
+    Returns one LATE_WARNING token per *commande* that will finish after
+    its export deadline, so the frontend and the warning banner both know.
+
+    Token format:
+      LATE_WARNING|<numeroCommande>|<dateEnd>|<dateExport>|<daysLate>
+    """
+    from datetime import date as _date, timedelta
+
+    # today's date is used to check if dateExport is already in the past
+    today = _date.today()
+
+    # Collect worst (latest) dateEnd per commande
+    worst: dict[str, tuple[str, str]] = {}  # cmd -> (dateEnd, dateExport)
+    for r in rows:
+        cmd = r.numeroCommande
+        if cmd not in worst or r.dateEnd > worst[cmd][0]:
+            worst[cmd] = (r.dateEnd, r.dateExport)
+
+    late_warnings = []
+    for cmd, (date_end_str, date_export_str) in sorted(worst.items()):
+        try:
+            date_end    = _date.fromisoformat(date_end_str)
+            date_export = _date.fromisoformat(date_export_str)
+        except ValueError:
+            continue
+
+        if date_end > date_export:
+            days_late = (date_end - date_export).days
+            late_warnings.append(
+                f"LATE_WARNING|{cmd}|{date_end_str}|{date_export_str}|{days_late}"
+            )
+        elif date_export < today:
+            # Deadline already passed before planning even started
+            days_late = (today - date_export).days
+            late_warnings.append(
+                f"LATE_WARNING|{cmd}|{date_end_str}|{date_export_str}|{days_late}"
+            )
+
+    return late_warnings
+
+
 @app.get("/api/planning/health")
 async def health():
     from rag.rag_engine import _faiss_index
     return {
         "status":      "ok",
         "ortools":     HAS_ORTOOLS,
-        "startDate":   START_DATE.isoformat(),
+        "startDate":   date.today().isoformat(),
         "faissVectors": _faiss_index.index.ntotal if _faiss_index.index else 0,
     }
 
 
 # ---------------------------------------------------------------------------
-# Run planning (unchanged logic, with optional FAISS indexing after save)
+# Run planning
 # ---------------------------------------------------------------------------
 
 @app.post("/api/planning/run", response_model=RunResponse)
 async def run_planning(req: RunRequest):
 
+    # ── Determine the schedule anchor datetime ────────────────────────────
+    # Priority: explicit startDatetime from the user → datetime.now() fallback.
+    if req.startDatetime:
+        try:
+            _start = datetime.fromisoformat(req.startDatetime)
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid startDatetime format: '{req.startDatetime}'. "
+                       f"Expected ISO-8601, e.g. '2026-05-10T08:30:00'.",
+            )
+    else:
+        _start = datetime.now()
+
+    # now_pm  : intra-day minute offset (0–1439), used to shift the solver output
+    # today_iso: calendar date that becomes the Gantt's day-0 label
+    now_pm      = _start.hour * 60 + _start.minute
+    today_iso   = _start.date().isoformat()
+
     print(f"\n{'='*60}")
     print(f"[API] POST /api/planning/run")
     print(f"[API] commandeIds = {req.commandeIds}")
     print(f"[API] maxMachinesPerOp = {req.maxMachinesPerOp}")
+    print(f"[API] startDatetime = {req.startDatetime!r}  →  {_start.strftime('%Y-%m-%d %H:%M')}")
+    print(f"[API] now_pm = {now_pm}")
     print(f"{'='*60}")
 
     try:
@@ -151,14 +249,20 @@ async def run_planning(req: RunRequest):
             rows = lns_fallback(commandes, ops_by_recette, lns_state)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"LNS fallback error: {str(e)}")
-        makespan_pm = max((r.endPM for r in rows), default=0)
+        makespan_pm = max((r.endPM for r in rows), default=0)  # elapsed minutes (solver-relative)
+        rows = _shift_rows(rows, now_pm)
+        # NOTE: do NOT add now_pm to makespan_pm.
+        # makespan_pm is an *elapsed duration* from the schedule start, not an
+        # absolute PM value.  Adding now_pm would double-count the start offset
+        # and inflate the reported makespan (e.g. 15h displayed as 1d 8h).
+        late_warnings = _collect_late_warnings(rows, _start.date())
         return RunResponse(
             status="feasible_lns_only",
             makespanDays=makespan_pm // PPD,
             makespanPM=makespan_pm,
-            startDate=START_DATE.isoformat(),
+            startDate=today_iso,
             rows=rows,
-            warnings=warnings + ["OR-Tools not installed; LNS fallback used"],
+            warnings=warnings + late_warnings + ["OR-Tools not installed; LNS fallback used"],
         )
 
     try:
@@ -172,16 +276,22 @@ async def run_planning(req: RunRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"CP-SAT error: {str(e)}")
 
-    makespan_pm = result.makespan_pm
+    makespan_pm = result.makespan_pm   # elapsed minutes (solver-relative)
     rows = result.extract_rows(commandes, ops_by_recette, lns_state)
+    rows = _shift_rows(rows, now_pm)
+    # NOTE: do NOT add now_pm to makespan_pm.
+    # makespan_pm is an *elapsed duration* from the schedule start, not an
+    # absolute PM value.  Adding now_pm would double-count the start offset
+    # and inflate the reported makespan (e.g. 15h displayed as 1d 8h).
 
-    print(f"[API] Done. makespan={makespan_pm} PM, {len(rows)} rows generated")
+    print(f"[API] Done. makespan={makespan_pm} PM ({makespan_pm//PPD}d {makespan_pm%PPD//60}h), {len(rows)} rows generated")
 
+    late_warnings = _collect_late_warnings(rows, _start.date())
     return RunResponse(
         status="optimal" if makespan_pm < horizon else "feasible",
         makespanDays=makespan_pm // PPD,
         makespanPM=makespan_pm,
-        startDate=START_DATE.isoformat(),
+        startDate=today_iso,
         rows=rows,
-        warnings=warnings,
+        warnings=warnings + late_warnings,
     )

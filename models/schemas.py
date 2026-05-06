@@ -9,7 +9,12 @@ from pydantic import BaseModel, Field
 class RunRequest(BaseModel):
     token:        str
     commandeIds:  Optional[List[int]] = None   # None → all "En attente"
-    maxMachinesPerOp: int = Field(default=1, ge=1, le=3)# 1 min → 1 machine par opération, 2 → 2 machines par opération, 3max → 3 machines par opération  
+    maxMachinesPerOp: int = Field(default=1, ge=1, le=3)
+    # Optional explicit schedule start datetime (ISO-8601 local time).
+    # Example: "2026-05-10T06:00:00"
+    # When None, api.py falls back to datetime.now() — the old behaviour.
+    startDatetime: Optional[str] = None
+
 
 class GanttRow(BaseModel):
     numeroCommande:          str

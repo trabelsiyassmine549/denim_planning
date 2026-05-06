@@ -13,7 +13,7 @@ Constants:
   PPD = 1440   # 24 hours x 60 minutes per day
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 PPD            = 1440   # 24 hours x 60 minutes
 DAY_START_HOUR = 0
@@ -25,8 +25,64 @@ AFTN_MINS         = 0
 LUNCH_START       = PPD
 WORK_MINS_PER_DAY = PPD
 
-START_DATE = date.today()
-JOURS_FR   = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
+JOURS_FR = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
+
+# ---------------------------------------------------------------------------
+# START_DATE — always the current date at the moment it is accessed.
+# This ensures that when the user clicks "Run", the schedule is anchored
+# to today's date, not to the date when the server process started.
+# ---------------------------------------------------------------------------
+
+class _TodayProxy:
+    """
+    A lazy date proxy: evaluates date.today() on every attribute/operation access.
+    Drop-in replacement for a plain `date` object in all arithmetic and
+    comparison expressions used across the codebase.
+    """
+    def __getattr__(self, name):
+        return getattr(date.today(), name)
+
+    def __add__(self, other):
+        return date.today() + other
+
+    def __radd__(self, other):
+        return other + date.today()
+
+    def __sub__(self, other):
+        return date.today() - other
+
+    def __rsub__(self, other):
+        return other - date.today()
+
+    def __eq__(self, other):
+        return date.today() == other
+
+    def __lt__(self, other):
+        return date.today() < other
+
+    def __le__(self, other):
+        return date.today() <= other
+
+    def __gt__(self, other):
+        return date.today() > other
+
+    def __ge__(self, other):
+        return date.today() >= other
+
+    def isoformat(self):
+        return date.today().isoformat()
+
+    def __str__(self):
+        return date.today().isoformat()
+
+    def __repr__(self):
+        return f"_TodayProxy({date.today().isoformat()})"
+
+    def weekday(self):
+        return date.today().weekday()
+
+
+START_DATE = _TodayProxy()
 
 
 # ---------------------------------------------------------------------------
@@ -35,21 +91,25 @@ JOURS_FR   = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
 
 def working_day_date(offset_days: int) -> date:
     """
-    Return the calendar date `offset_days` days from START_DATE.
+    Return the calendar date `offset_days` days from today.
+    Evaluated at call time so the schedule is always anchored to the
+    current date when the optimisation is triggered.
     No weekend skipping — the workshop runs 24/7.
     """
-    return START_DATE + timedelta(days=max(offset_days, 0))
+    return date.today() + timedelta(days=max(offset_days, 0))
 
 
 def date_to_day_offset(iso_date: str) -> int:
     """
-    Convert an ISO date string to a calendar-day offset from START_DATE.
+    Convert an ISO date string to a calendar-day offset from today.
+    Evaluated at call time — the deadline is relative to the exact
+    moment the optimisation is triggered, not server-start time.
     Returns minimum 1 so deadlines today or in the past still get
     a non-zero PM deadline for the solver.
     No weekend skipping — the workshop runs 24/7.
     """
     target = date.fromisoformat(iso_date)
-    delta  = (target - START_DATE).days
+    delta  = (target - date.today()).days
     return max(delta, 1)
 
 
