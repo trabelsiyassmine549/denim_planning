@@ -1,8 +1,10 @@
 """
 rag/analyze_router.py  —  POST /api/planning/analyze
 =====================================================
-New FastAPI router that exposes the RAG analysis endpoint.
+FastAPI router that exposes the RAG analysis endpoint.
 Add to api.py with:  app.include_router(analyze_router)
+
+v5.0: Removed SKIP_FORMATTER_LLM from health endpoint (flag deleted in rag_engine v5.0).
 """
 
 from fastapi import APIRouter, HTTPException
@@ -45,20 +47,50 @@ class IndexRequest(BaseModel):
 @router.post("/api/planning/analyze", response_model=AnalyzeResponse)
 async def analyze_planning(req: AnalyzeRequest):
     """
-    RAG-powered planning analysis.
+    RAG-powered planning analysis (v5.0 — Mistral-Primary).
 
     The Angular frontend calls this (via the .NET proxy) after a planning
     is generated. It receives structured SQL data (queries A–F) and the
     user's natural-language question, and returns a structured expert answer.
+
+    v5.0: Improvement questions now go through Mistral as the primary reasoning
+    engine instead of returning deterministic bullet strings directly. Python
+    acts as fact extractor, prompt builder, and post-LLM validator.
+
+    NOTE: sqlData must be populated by the .NET backend for improvement/analysis
+    questions to work. An empty sqlData will cause the RAG engine to return
+    a data-missing refusal rather than calling Mistral.
     """
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question is required")
+
+    db_rows = req.sqlData or {}
+
+    # Pre-call validation — warn on missing keys so routing bugs surface in
+    # logs before they cause silent analyzer failures.
+    REQUIRED_FOR_IMPROVEMENT = {"A", "B", "C", "D", "E", "F"}
+    present = {k for k, v in db_rows.items() if isinstance(v, list) and len(v) > 0}
+    missing = REQUIRED_FOR_IMPROVEMENT - present
+    if missing:
+        print(
+            f"[ANALYZE] WARNING: sqlData missing or empty keys: {sorted(missing)} "
+            f"(planning_id={req.planningId}, question={req.question!r:.60})"
+        )
+
+    # Log a one-line summary of what arrived so column-name bugs are visible.
+    for key in sorted(db_rows):
+        rows = db_rows[key]
+        cols = list(rows[0].keys()) if rows else []
+        print(
+            f"[ANALYZE] Query {key}: {len(rows)} rows | "
+            f"columns={cols}"
+        )
 
     try:
         answer = await analyze(
             planning_id=req.planningId,
             question=req.question,
-            db_rows=req.sqlData or {},
+            db_rows=db_rows,
         )
         return AnalyzeResponse(
             planningId=req.planningId,
@@ -84,7 +116,7 @@ async def index_planning(req: IndexRequest):
 
 @router.get("/api/planning/analyze/health")
 async def analyze_health():
-    """Check RAG engine health."""
+    """Check RAG engine health (v5.0 — Mistral-Primary mode)."""
     from rag.rag_engine import _faiss_index, EMBED_MODEL, LLM_MODEL, OLLAMA_URL
     import httpx
     try:
@@ -97,11 +129,12 @@ async def analyze_health():
         ollama_ok = False
 
     return {
-        "status": "ok" if ollama_ok else "degraded",
-        "ollama": ollama_ok,
-        "models": models,
-        "embedModel": EMBED_MODEL,
-        "llmModel": LLM_MODEL,
-        "faissVectors": _faiss_index.index.ntotal if _faiss_index.index else 0,
-        "faissChunks": len(_faiss_index.texts),
+        "status":        "ok" if ollama_ok else "degraded",
+        "ollama":        ollama_ok,
+        "models":        models,
+        "embedModel":    EMBED_MODEL,
+        "llmModel":      LLM_MODEL,
+        "mode":          "mistral-primary-v5.0",  # replaces skipFormatter flag
+        "faissVectors":  _faiss_index.index.ntotal if _faiss_index.index else 0,
+        "faissChunks":   len(_faiss_index.texts),
     }

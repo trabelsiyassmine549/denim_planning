@@ -56,7 +56,7 @@
     "section": "PARTIE III — Logique Métier du Solveur CP-SAT > 4. Fonction objectif CP-SAT"
   },
   {
-    "text": "--- 5. Statuts du solveur — définitions exactes --- Statut | Définition exacte -------------------------- OPTIMAL | Le solveur a prouvé mathématiquement qu'aucune meilleure solution n'existe. Relancer avec plus de temps est INUTILE. FEASIBLE | Solution valide mais dont l'optimalité n'est pas prouvée (time limit atteinte). Relancer avec plus de temps PEUT améliorer. INFEASIBLE | Aucune solution valide n'existe avec les contraintes données. Vérifier les données machines/opérations. ⚠️ Ne JAMAIS suggérer de relancer le solveur si le statut est OPTIMAL — c'est une preuve mathématique, pas une limite de temps.",
+    "text": "--- 5. Statuts du solveur — définitions exactes --- Statut | Définition exacte -------------------------- OPTIMAL | Le solveur a prouvé mathématiquement qu'aucune meilleure solution n'existe. Relancer avec plus de temps est INUTILE. FEASIBLE | Solution valide mais dont l'optimalité n'est pas prouvée (time limit atteinte). Relancer avec plus de temps PEUT améliorer. INFEASIBLE | Aucune solution valide n'existe avec les contraintes données. Vérifier les données machines/opérations. ⚠️ Si le statut est OPTIMAL : — Ne pas suggérer simplement de relancer le solveur avec plus de temps (l'objectif modélisé est déjà prouvé optimal). — MAIS continuer à analyser les améliorations industrielles possibles hors du modèle mathématique actuel. — Proposer des améliorations opérationnelles réelles à partir des données SQL disponibles. — Le statut OPTIMAL ne signifie PAS que le planning réel ne peut plus être amélioré sur les KPIs industriels. Si le statut est FEASIBLE : relancer avec plus de temps ET appliquer les améliorations industrielles.",
     "section": "PARTIE III — Logique Métier du Solveur CP-SAT > 5. Statuts du solveur — définitions exactes"
   },
   {
@@ -64,7 +64,7 @@
     "section": "PARTIE III — Logique Métier du Solveur CP-SAT > 6. Gestion du temps — Productive Minutes (PM)"
   },
   {
-    "text": "--- 1. Critères d'un bon planning --- Zéro retard sur les commandes urgence 1, 2 ou 3 Statut CP-SAT = OPTIMAL (preuve mathématique d'optimalité) NbLots ≤ 5 par opération par commande (sauf quantité exceptionnelle) Toutes les machines disponibles dont les opérations correspondent aux commandes sont utilisées",
+    "text": "--- 1. Critères d'un bon planning --- Zéro retard sur les commandes urgence 1, 2 ou 3 Statut CP-SAT = OPTIMAL (optimalité mathématique pour l'objectif retard+makespan — des améliorations industrielles restent possibles sur d'autres KPIs) NbLots ≤ 5 par opération par commande (sauf quantité exceptionnelle) Toutes les machines disponibles dont les opérations correspondent aux commandes sont utilisées",
     "section": "PARTIE IV — Critères de Qualité et Diagnostics > 1. Critères d'un bon planning"
   },
   {
@@ -104,7 +104,7 @@
     "section": "PARTIE V — Pipeline RAG et Requêtes SQL Diagnostiques > 7. Requête F — Machines disponibles non utilisées"
   },
   {
-    "text": "--- 1. Règles de réponse — sans exception --- Répondre directement en 2 à 6 lignes. Jamais plus sauf si la question liste explicitement plusieurs points. Zéro blabla : pas d'introduction, pas de conclusion, pas de \"Bien sûr\", pas de reformulation. Chiffres réels uniquement — ceux présents dans les données SQL fournies. Ne jamais inventer ni extrapoler. Si une information est absente des données : \"Cette information n'est pas disponible pour ce planning.\" Jamais de noms de colonnes SQL (MakespanPM, TauxChargePct, NbLots...) dans les réponses. Répondre dans la langue exacte de l'utilisateur (français ou anglais). Ne jamais suggérer de modifier l'urgence d'une commande — c'est une donnée métier fixe. Si le statut est OPTIMAL, ne JAMAIS suggérer de relancer le solveur — l'optimalité est prouvée.",
+    "text": "--- 1. Règles de réponse — sans exception --- Répondre directement en 2 à 6 lignes. Jamais plus sauf si la question liste explicitement plusieurs points. Zéro blabla : pas d'introduction, pas de conclusion, pas de \"Bien sûr\", pas de reformulation. Chiffres réels uniquement — ceux présents dans les données SQL fournies. Ne jamais inventer ni extrapoler. Si une information est absente des données : \"Cette information n'est pas disponible pour ce planning.\" Jamais de noms de colonnes SQL (MakespanPM, TauxChargePct, NbLots...) dans les réponses. Répondre dans la langue exacte de l'utilisateur (français ou anglais). Ne jamais suggérer de modifier l'urgence d'une commande — c'est une donnée métier fixe. Si le statut est OPTIMAL : ne pas suggérer simplement de relancer le solveur — MAIS analyser systématiquement les améliorations industrielles depuis les données SQL (rééquilibrage machine, réduction des lots, parallélisation, séquencement). Répondre uniquement « aucune amélioration possible » est INTERDIT.",
     "section": "PARTIE VI — System Prompt et Règles LLM > 1. Règles de réponse — sans exception"
   },
   {
@@ -126,5 +126,45 @@
   {
     "text": "Garantit que zéro retard prime toujours sur le makespan. urgency_weight | Poids de l'urgence : urgence 1 → poids 10, urgence 5 → poids 2, urgence 10 → poids 1. FAISS | Base vectorielle en mémoire utilisée pour la recherche sémantique des chunks RAG. nomic-embed-text | Modèle d'embedding utilisé pour vectoriser les chunks et les questions. Mistral 7B | Modèle LLM local (via Ollama) utilisé pour générer les diagnostics.",
     "section": "PARTIE VIII — Glossaire Technique"
+  },
+  {
+    "text": "=== PARTIE IX — Raisonnement Industriel Avancé et Analyse Post-OPTIMAL === Cette partie définit comment l'assistant doit raisonner lorsqu'un planning a le statut OPTIMAL. L'objectif est de transformer l'assistant d'un 'validateur CP-SAT' en un véritable 'consultant en optimisation industrielle utilisant les données du planning'.",
+    "section": "PARTIE IX — Raisonnement Industriel Avancé et Analyse Post-OPTIMAL"
+  },
+  {
+    "text": "--- 1. Distinction fondamentale : Optimalité mathématique vs Optimalité industrielle --- Le statut OPTIMAL signifie uniquement : 'optimal pour le MODÈLE MATHÉMATIQUE ACTUEL et ses contraintes.' Il ne signifie PAS : ❌ meilleur planning industriel possible dans la réalité ❌ impossible de réduire les retards par des actions opérationnelles ❌ impossible de réduire le makespan par des changements de ressources ❌ impossible de rééquilibrer les machines ❌ impossible d'améliorer le batching des lots ❌ impossible d'améliorer le séquencement des opérations ❌ impossible de trouver des opportunités de parallélisation",
+    "section": "PARTIE IX — Raisonnement Industriel Avancé et Analyse Post-OPTIMAL > 1. Distinction fondamentale : Optimalité mathématique vs Optimalité industrielle"
+  },
+  {
+    "text": "--- 2. Comportement obligatoire de l'assistant — statut OPTIMAL --- Même avec un statut OPTIMAL, l'assistant DOIT — si la question porte sur des améliorations, des bottlenecks, ou l'optimisation : R1 — Analyser les machines non utilisées (UNUSED_MACHINES) : leurs opérations sont-elles compatibles avec le planning ? Si oui → proposer redistribution de lots (mode multi-machines). R2 — Analyser le rééquilibrage de charge : machines SURCHARGE vs machines SOUS-UTILISEE depuis [MACHINES]. Proposer réallocation concrète de lots. R3 — Analyser la fragmentation des lots : NbLots élevé depuis [FRAGMENTATION] → identifier machines avec CapaciteMax plus grande pour réduire le nombre de lots. R4 — Analyser les commandes en retard (LATE_ORDERS) : proposer des stratégies de réduction (réallocation machine, changement séquencement, mode multi-machines). R5 — Analyser les goulots d'étranglement : opérations avec durée totale la plus élevée = cible prioritaire d'amélioration. R6 — Analyser les opportunités de parallélisation : opérations indépendantes pouvant s'exécuter simultanément sur plusieurs machines.",
+    "section": "PARTIE IX — Raisonnement Industriel Avancé et Analyse Post-OPTIMAL > 2. Comportement obligatoire de l'assistant — statut OPTIMAL"
+  },
+  {
+    "text": "R7 — Proposer des stratégies de séquencement alternatives visibles dans [DÉTAIL OPÉRATIONS]. R8 — Identifier les regroupements intelligents de commandes (même RecetteId = mêmes opérations = mêmes machines = optimisation possible).",
+    "section": "PARTIE IX — Raisonnement Industriel Avancé et Analyse Post-OPTIMAL > 2. Comportement obligatoire de l'assistant — statut OPTIMAL"
+  },
+  {
+    "text": "--- 3. Réponse INTERDITE quand le statut est OPTIMAL --- L'assistant ne doit JAMAIS répondre uniquement : 🚫 \"Le planning est déjà optimal, aucune amélioration n'est possible.\" 🚫 \"CP-SAT a prouvé l'optimalité, il n'y a rien à améliorer.\" 🚫 \"Relancez le solveur avec plus de temps pour améliorer.\" (si OPTIMAL, le solveur ne peut pas faire mieux sur son objectif) 🚫 Toute réponse qui bloque l'analyse industrielle derrière le statut OPTIMAL. La réponse CORRECTE : Confirmer l'optimalité mathématique en une ligne, PUIS analyser immédiatement les améliorations industrielles concrètes depuis les données SQL.",
+    "section": "PARTIE IX — Raisonnement Industriel Avancé et Analyse Post-OPTIMAL > 3. Réponse INTERDITE quand le statut est OPTIMAL"
+  },
+  {
+    "text": "--- 4. KPIs industriels non couverts par la fonction objectif CP-SAT --- La fonction objectif CP-SAT optimise uniquement : Minimize(100_000 × Σ(urgency_weight × tardiness) + makespan) L'assistant doit AUSSI analyser les KPIs suivants depuis les données SQL : 📊 Équilibrage machine : ratio de charge entre machines compatibles — détecter SURCHARGE + SOUS-UTILISEE simultanées 📊 Fluidité opérationnelle : temps d'attente entre opérations consécutives d'une même commande 📊 Robustesse du planning : concentration excessive sur une seule machine = fragilité en cas de panne 📊 Congestion machine : trop de lots simultanés sur une machine = risque de retard en cascade 📊 Fragmentation excessive : NbLots très élevé = inefficacité, risque dépassement, piste d'amélioration 📊 Résilience de production : y a-t-il une machine alternative disponible si une machine tombe en panne ? 📊 Qualité du séquencement : opérations dépendantes bien enchaînées sans attente inutile entre elles ? 📊 Opportunités de parallélisation : opérations indépendantes pouvant s'exécuter simultanément sur plusieurs machines 📊 Regroupement de commandes : commandes avec même RecetteId peuvent partager des créneaux machine",
+    "section": "PARTIE IX — Raisonnement Industriel Avancé et Analyse Post-OPTIMAL > 4. KPIs industriels non couverts par la fonction objectif CP-SAT"
+  },
+  {
+    "text": "📊 Priorisation dynamique : commandes critiques en retard sont-elles en tête de séquence ?",
+    "section": "PARTIE IX — Raisonnement Industriel Avancé et Analyse Post-OPTIMAL > 4. KPIs industriels non couverts par la fonction objectif CP-SAT"
+  },
+  {
+    "text": "--- 5. Questions déclenchant obligatoirement l'analyse industrielle avancée --- Lorsque l'utilisateur pose une des questions suivantes, l'assistant DOIT fournir une analyse industrielle complète — même si le statut est OPTIMAL : ➡️ \"Comment réduire le makespan ?\" ➡️ \"Comment réduire les retards ?\" ➡️ \"Comment améliorer le planning ?\" ➡️ \"Générer un meilleur planning\" ➡️ \"Qu'est-ce qui peut être optimisé ?\" ➡️ \"Comment améliorer la productivité ?\" ➡️ \"Comment réduire les goulots d'étranglement ?\" ➡️ \"Le planning est-il optimal ?\" (→ confirmer l'optimalité mathématique ET analyser les améliorations industrielles) ➡️ \"Y a-t-il des machines sous-utilisées ?\" ➡️ \"Comment rééquilibrer les machines ?\" ➡️ \"Y a-t-il de la fragmentation excessive ?\" ➡️ \"Quelles améliorations sont possibles ?\"",
+    "section": "PARTIE IX — Raisonnement Industriel Avancé et Analyse Post-OPTIMAL > 5. Questions déclenchant obligatoirement l'analyse industrielle avancée"
+  },
+  {
+    "text": "Pour toutes ces questions, l'assistant doit fournir : des stratégies d'optimisation concrètes, des allocations de ressources alternatives, une analyse des goulots d'étranglement, des suggestions d'équilibrage machine, des recommandations d'optimisation des lots et du séquencement — le tout basé UNIQUEMENT sur les noms de machines, capacités, lots et commandes réels présents dans les données SQL.",
+    "section": "PARTIE IX — Raisonnement Industriel Avancé et Analyse Post-OPTIMAL > 5. Questions déclenchant obligatoirement l'analyse industrielle avancée"
+  },
+  {
+    "text": "--- 6. Template de réponse recommandé pour les questions d'amélioration --- [STATUT MATHÉMATIQUE] Le planning est OPTIMAL pour son objectif modélisé (minimisation retard pondéré + makespan). [ANALYSE INDUSTRIELLE] Malgré cette optimalité mathématique, les améliorations opérationnelles suivantes sont possibles : [AMÉLIORATIONS CONCRÈTES] A1 — <amélioration avec machine réelle, capacité, nombre de lots concernés> A2 — <autre amélioration avec données réelles> A3 — <opportunité de parallélisation ou rééquilibrage> [IMPACT ESTIMÉ] Ces améliorations peuvent réduire : <gain estimé en termes de makespan / nombre de lots / charge machine>",
+    "section": "PARTIE IX — Raisonnement Industriel Avancé et Analyse Post-OPTIMAL > 6. Template de réponse recommandé pour les questions d'amélioration"
   }
 ]
