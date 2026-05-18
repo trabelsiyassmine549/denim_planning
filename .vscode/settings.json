@@ -1,0 +1,6 @@
+{
+    "python.analysis.extraPaths": [
+        "./chatBotSystem",
+        "./chatBotSystem/rag"
+    ]
+}
