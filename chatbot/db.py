@@ -1,9 +1,3 @@
-"""
-db.py — Direct SQL Server connection for the chatbot RAG system.
-Uses pyodbc with connection pooling via a simple context manager.
-No .NET proxy — FastAPI connects directly to CommandesDB.
-"""
-
 import os
 import pyodbc
 from contextlib import contextmanager

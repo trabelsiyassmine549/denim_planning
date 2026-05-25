@@ -20,16 +20,16 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from data.fetcher import load_live_data, validate
-from models.schemas import RunRequest, RunResponse, GanttRow
-from solver.cp_sat_solver import (
+from optimisationEngine.data.fetcher import load_live_data, validate
+from optimisationEngine.models.schemas import RunRequest, RunResponse, GanttRow
+from optimisationEngine.solver.cp_sat_solver import (
     HAS_ORTOOLS,
     run_lns,
     run_cpsat,
     lns_fallback,
     collect_split_warnings,
 )
-from utils.time_utils import PPD, date_to_day_offset, working_day_date, pm_to_clock
+from optimisationEngine.utils.time_utils import PPD, date_to_day_offset, working_day_date, pm_to_clock
 
 from chatbot.rag.faiss_index import build_index, rebuild_for_planning, _store as _faiss_store
 from chatbot.chat_router import router as chatbot_router

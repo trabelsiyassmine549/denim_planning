@@ -1,35 +1,8 @@
-"""
-sql_fetcher.py — Maps question intent to SQL queries against CommandesDB.
-Returns structured context dicts ready to be injected into the Mistral prompt.
-
-Design principle: no ORM, no heavy abstraction. Plain SQL + dict results.
-Each fetch_* function accepts an optional planning_id and returns a
-human-readable text block (not raw SQL column names).
-
-FIX: _cached_query() had a stray 'from db import query as _q' on the cache-miss
-path.  'db' is not a resolvable top-level module — the correct import is
-'from chatbot.db import …', which is already done at the top of this file.
-The redundant local import is removed; the top-level 'query' is used directly.
-
-FIX v3 (fetch_fragmentation): Removed HAVING COUNT(*) > 1 filter.
-    BEFORE: The HAVING clause silently excluded any (Machine, Commande, Operation)
-            group that had only 1 lot — e.g. CMD5 Poudre on Brongo 2 and CMD5
-            Javellisation on Brongo 5. Mistral never saw these rows and either
-            omitted CMD5 entirely or hallucinated lot counts for it by blending
-            data from other commandes.
-    AFTER:  All groups are returned regardless of NbLots. Single-lot entries
-            (NbLots=1) are legitimate planning facts that Mistral must report
-            accurately. The FRAGMENTATION prefix + system prompt rules already
-            prevent Mistral from inventing counts; having complete data is what
-            prevents omissions.
-"""
-
-from typing import Optional, List, Dict, Any
-from chatbot.db import query, query_one, scalar
+from typing import Optional, List, Dict
+from chatbot.db import query
 from chatbot.redis_cache import get_sql_cache, set_sql_cache
 
-
-# ── Cache wrapper ─────────────────────────────────────────────────────────────
+# ── Cache wrapper 
 
 def _cached_query(
     planning_id: Optional[int],
@@ -37,21 +10,7 @@ def _cached_query(
     params: tuple = (),
     cache_key_extra: str = "",
 ) -> List[Dict]:
-    """
-    Execute sql with params, caching the result in Redis.
-
-    cache_key_extra: an optional string appended to the cache key to
-    disambiguate queries that share the same SQL template but differ by
-    a runtime value (e.g. machine name, commande number) already captured
-    in params.  Must NOT be appended to sql — doing so corrupts the query
-    string sent to SQL Server.
-
-    FIX: previous call sites passed `sql + machine_name` or `sql + commande_num`
-    as the sql argument.  SQL Server received a query ending with e.g.
-    "ORDER BY ...\nBrongo 1" and raised error 42000 / syntax error near 'Brongo'.
-    The correct pattern is:
-        _cached_query(pid, sql, (pid, val), cache_key_extra=val)
-    """
+    
     cache_key = sql + str(params) + cache_key_extra
     cached = get_sql_cache(planning_id, cache_key)
     if cached is not None:
@@ -61,7 +20,7 @@ def _cached_query(
     return result
 
 
-# ── Formatters ────────────────────────────────────────────────────────────────
+# ── Formatters 
 
 def _fmt_minutes(minutes) -> str:
     """Convert minutes to human-readable string."""
@@ -90,7 +49,7 @@ def _fmt_rows_as_text(rows: List[Dict], field_map: Dict[str, str]) -> str:
     return "\n".join(lines)
 
 
-# ── Planning overview ─────────────────────────────────────────────────────────
+# ── Planning overview 
 
 def fetch_planning_summary(planning_id: int) -> str:
     sql = """
@@ -113,7 +72,7 @@ def fetch_planning_summary(planning_id: int) -> str:
     )
 
 
-# ── Machine load / utilisation ────────────────────────────────────────────────
+# ── Machine load / utilisation 
 
 def fetch_machine_load(planning_id: int) -> str:
     sql = """
@@ -131,11 +90,6 @@ def fetch_machine_load(planning_id: int) -> str:
         return "Aucune donnée de charge machine."
     lines = ["Charge par machine:"]
     for r in rows:
-        # FIX v2.6: label changed from "lot(s)" to "ligne(s) planning".
-        # COUNT(*) grouped by MachineName counts scheduling rows, not production
-        # lots. Labelling it "lots" caused Mistral to report e.g. "12 lots sur
-        # Brongo 1" in résumé answers, which is factually wrong — those are
-        # planning rows spanning multiple commandes and operations.
         lines.append(
             f"  {r['MachineName']}: {_fmt_minutes(r['TotalMinutes'])} planifiées | "
             f"{r['NbCommandes']} commande(s) | {r['NbLignes']} ligne(s) planning"
@@ -143,7 +97,7 @@ def fetch_machine_load(planning_id: int) -> str:
     return "\n".join(lines)
 
 
-# ── Commandes late / at risk ──────────────────────────────────────────────────
+# ── Commandes late / at risk 
 
 def fetch_late_orders(planning_id: int) -> str:
     sql = """
@@ -169,7 +123,7 @@ def fetch_late_orders(planning_id: int) -> str:
     return "\n".join(lines)
 
 
-# ── Commandes overview ────────────────────────────────────────────────────────
+# ── Commandes overview 
 
 def fetch_orders_for_planning(planning_id: int) -> str:
     sql = """
@@ -197,7 +151,7 @@ def fetch_orders_for_planning(planning_id: int) -> str:
     return "\n".join(lines)
 
 
-# ── Operations sequence for a commande ───────────────────────────────────────
+# ── Operations sequence for a commande 
 
 def fetch_operations_for_order(planning_id: int, commande_num: str) -> str:
     sql = """
@@ -223,29 +177,6 @@ def fetch_operations_for_order(planning_id: int, commande_num: str) -> str:
 # ── Fragmentation (lots) ──────────────────────────────────────────────────────
 
 def fetch_fragmentation(planning_id: int) -> str:
-    """
-    Returns the number of lots per (Machine, Commande, Operation) group
-    for the given planning. Every group is returned — including single-lot
-    entries (NbLots=1).
-
-    FIX v3: Removed HAVING COUNT(*) > 1.
-        The old filter silently dropped any group with only 1 lot, e.g.:
-          - CMD5  Poudre       on Brongo 2  (1 lot)
-          - CMD5  Javellisation on Brongo 5 (1 lot)
-        Mistral never received these rows and either omitted CMD5 entirely
-        or invented lot counts by blending data from CMD1/CMD2. The fix
-        ensures the SQL block is complete so Mistral can report accurately.
-
-    FIX v2 (preserved): Removed TotalPieces and DureeMoyenneLot from output.
-        Those columns caused Mistral to invent "2 lots de 200 pièces" by
-        mixing LotSize values across Poudre (100 pièces/lot) and Javellisation
-        (200 pièces/lot) operations. The only reliable, unambiguous fact is
-        NbLots — that is all Mistral should report for fragmentation.
-
-    Each output line is a single, unambiguous statement:
-      [i/n] Machine=X Commande=Y Operation=Z NbLots=N
-    The numbered prefix lets Mistral verify it has listed every row.
-    """
     sql = """
         SELECT MachineName, NumeroCommande, NomOperation,
                COUNT(*) AS NbLots
@@ -254,7 +185,6 @@ def fetch_fragmentation(planning_id: int) -> str:
         GROUP BY MachineName, NumeroCommande, NomOperation
         ORDER BY MachineName, NumeroCommande, NomOperation
     """
-    # FIX v3: HAVING COUNT(*) > 1 removed — all groups returned, including NbLots=1.
     rows = _cached_query(planning_id, sql, (planning_id,))
     if not rows:
         return "Pas de données de fragmentation pour ce planning."
@@ -276,7 +206,7 @@ def fetch_fragmentation(planning_id: int) -> str:
     return "\n".join(lines)
 
 
-# ── Active alerts ─────────────────────────────────────────────────────────────
+# ── Active alerts 
 
 def fetch_alerts(planning_id: Optional[int] = None) -> str:
     if planning_id:
@@ -312,7 +242,7 @@ def fetch_alerts(planning_id: Optional[int] = None) -> str:
     return "\n".join(lines)
 
 
-# ── Machines overview ─────────────────────────────────────────────────────────
+# ── Machines overview 
 
 def fetch_machines() -> str:
     # Only return functional machines so Mistral never counts or names
@@ -334,7 +264,7 @@ def fetch_machines() -> str:
     return "\n".join(lines)
 
 
-# ── Commandes actives (hors planning) ────────────────────────────────────────
+# ── Commandes actives (hors planning) 
 
 def fetch_active_orders() -> str:
     sql = """
@@ -357,7 +287,7 @@ def fetch_active_orders() -> str:
     return "\n".join(lines)
 
 
-# ── Recette detail (operations sequence) ─────────────────────────────────────
+# ── Recette detail (operations sequence) 
 
 def fetch_recette_for_commande(planning_id: int, commande_num: str) -> str:
     """
@@ -463,7 +393,7 @@ def fetch_all_recettes(planning_id: Optional[int] = None) -> str:
     return "\n".join(lines)
 
 
-# ── Valid transfer targets (pre-computed in Python, never by LLM) ─────────────
+# ── Valid transfer targets (pre-computed in Python, never by LLM) 
 
 def fetch_valid_transfers(planning_id: int) -> str:
     """
@@ -585,7 +515,7 @@ def fetch_valid_transfers(planning_id: int) -> str:
     return "\n".join(lines)
 
 
-# ── Operation sequencing / ordering verification ──────────────────────────────
+# ── Operation sequencing / ordering verification 
 
 def fetch_operation_sequence(planning_id: int) -> str:
     """
@@ -673,7 +603,7 @@ def fetch_operation_sequence(planning_id: int) -> str:
     return "\n".join(lines).rstrip()
 
 
-# ── Machine impact analysis (panne / breakdown hypotheticals) ─────────────────
+# ── Machine impact analysis (panne / breakdown hypotheticals) 
 
 
 def fetch_machine_impact(planning_id: int, machine_name: str) -> str:
@@ -729,10 +659,7 @@ def fetch_machine_impact(planning_id: int, machine_name: str) -> str:
         )
 
     # Query B — alternative machines for each (commande, operation) pair.
-    # FIX: SQL Server does not support row-value constructor syntax:
-    #   (col1, col2) IN (SELECT col1, col2 FROM ...)
-    # Replaced with a correlated EXISTS subquery — ANSI-compatible and
-    # supported by all SQL Server versions including SQL Server 2012+.
+
     fallback_sql = """
         SELECT pr.NumeroCommande, pr.NomOperation, pr.MachineName,
                COUNT(*) AS NbLots
@@ -756,7 +683,6 @@ def fetch_machine_impact(planning_id: int, machine_name: str) -> str:
         cache_key_extra="fb_" + machine_name,
     )
 
-    # Build (commande, operation) → [alternative machine strings]
     from collections import defaultdict
     fallbacks: Dict[tuple, list] = defaultdict(list)
     for r in fallback_rows:
@@ -779,11 +705,6 @@ def fetch_machine_impact(planning_id: int, machine_name: str) -> str:
         fin   = str(r.get("FinPrevue",  "?"))[:16].replace("T", " ")
         alts = fallbacks.get(key)
         alt_str = (" | ".join(alts)) if alts else "BLOQUÉ — aucune autre machine"
-        # FIX: IMPACT and FALLBACK merged onto one line so Mistral cannot
-        # lose the pairing between a group and its alternatives. When they
-        # were on separate lines, Mistral read IMPACT: but skipped FALLBACK:,
-        # causing it to fabricate "aucune alternative" for CMD1/ORD-A001
-        # even when Brongo 2, 3, 5 alternatives were listed in FALLBACK:.
         lines.append(
             f"GROUPE: Commande={r['NumeroCommande']} "
             f"Operation={r['NomOperation']} "
@@ -797,7 +718,7 @@ def fetch_machine_impact(planning_id: int, machine_name: str) -> str:
     return "\n".join(lines)
 
 
-# ── Generic SQL for free-form questions ──────────────────────────────────────
+# ── Generic SQL for free-form questions 
 
 def fetch_generic(sql: str, planning_id: Optional[int] = None) -> List[Dict]:
     """Execute arbitrary read-only SQL, with cache."""

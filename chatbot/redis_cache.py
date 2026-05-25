@@ -1,21 +1,3 @@
-"""
-redis_cache.py — Redis-backed cache + conversation memory for the chatbot.
-
-Two responsibilities:
-  1. SQL query cache     : avoid re-querying the DB for identical questions
-                           within the same planning session (TTL = 5 min).
-  2. Conversation memory : store the last N turns per session so Mistral
-                           has conversational context without a client-side
-                           message history.
-
-Redis key schema:
-  chatbot:sql:{planning_id}:{query_hash}   → JSON-encoded query result
-  chatbot:mem:{session_id}                 → JSON-encoded list of {role, content}
-  chatbot:ctx:{planning_id}                → JSON-encoded planning summary facts
-
-If Redis is unavailable, every method degrades gracefully (returns None / []).
-"""
-
 import hashlib
 import json
 import os
@@ -39,7 +21,6 @@ except Exception as e:
     REDIS_OK = False
     print(f"[REDIS] Unavailable — running without cache: {e}")
 
-# ── TTLs ──────────────────────────────────────────────────────────────────────
 SQL_TTL = 300        # 5 min — SQL cache per planning/query
 MEM_TTL = 3600       # 1 hour — conversation memory per session
 CTX_TTL = 600        # 10 min — planning context summary
@@ -58,7 +39,7 @@ def _safe(fn):
     return wrapper
 
 
-# ── SQL cache ─────────────────────────────────────────────────────────────────
+# ── SQL cache 
 
 def _sql_key(planning_id: Optional[int], sql: str) -> str:
     h = hashlib.md5(sql.encode()).hexdigest()[:12]
@@ -79,7 +60,7 @@ def set_sql_cache(planning_id: Optional[int], sql: str, data: Any) -> None:
     _redis.setex(key, SQL_TTL, json.dumps(data, default=str))  # type: ignore
 
 
-# ── Conversation memory ────────────────────────────────────────────────────────
+# ── Conversation memory 
 
 MAX_TURNS = 6   # keep last 6 turns (3 user + 3 assistant) in memory
 
@@ -110,7 +91,7 @@ def clear_memory(session_id: str) -> None:
     _redis.delete(_mem_key(session_id))  # type: ignore
 
 
-# ── Planning context cache ─────────────────────────────────────────────────────
+# ── Planning context cache 
 
 def _ctx_key(planning_id: int) -> str:
     return f"chatbot:ctx:{planning_id}"

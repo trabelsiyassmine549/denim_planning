@@ -1,42 +1,4 @@
-"""
-faiss_index.py — Semantic retrieval via FAISS + nomic-embed-text (Ollama).
 
-What gets indexed:
-  - PlanningRows  : one text chunk per (planning, machine, operation) group
-  - Commandes     : one chunk per commande (status, recette, urgence, dates)
-  - Alerts        : one chunk per active alert
-
-Index is built at FastAPI startup and refreshed whenever a new planning
-is saved (call rebuild_for_planning(planning_id) from your planning endpoint).
-
-Retrieval:
-  retrieve(question, planning_id, top_k) → list of relevant text chunks
-  These chunks are injected into the Mistral prompt alongside the SQL context.
-
-If FAISS or nomic-embed-text is unavailable, every function degrades
-gracefully (returns []) so the chatbot still works via SQL-only context.
-
-FIX: every internal helper was doing 'from db import query' (bare module name).
-     Python can't find a top-level 'db' module when the package is 'chatbot'.
-     All imports are now 'from chatbot.db import query'.
-
-FIX v2 (retrieve): Added top_k == 0 early-return guard.
-     When SQL_ONLY_INTENTS fire (amélioration, makespan, résumé, etc.),
-     rag_engine calls retrieve() with top_k=0. Without the guard, the function
-     still called _embed([question]) (wasting ~1s) and then passed k=0 to
-     faiss.IndexFlatIP.search(), which raises an error on some faiss-cpu builds.
-     The empty-string exception message caused the misleading log line:
-       [FAISS] Retrieve error:
-     Adding 'if top_k == 0: return []' before any FAISS/embed work eliminates
-     the error and the wasted embedding call.
-
-FIX v2 (retrieve error logging): Changed bare 'except Exception as e: print(e)'
-     to 'print(repr(e))' + 'traceback.format_exc()' so future errors are
-     visible in the logs instead of printing an empty string.
-"""
-
-import asyncio
-import hashlib
 import pickle
 import traceback
 from pathlib import Path
@@ -45,7 +7,7 @@ from typing import List, Optional
 import httpx
 import numpy as np
 
-# ── FAISS import (optional) ───────────────────────────────────────────────────
+# ── FAISS import (optional) 
 try:
     import faiss
     FAISS_OK = True
@@ -64,7 +26,7 @@ _META_PATH  = Path(__file__).parent / "faiss_store" / "meta.pkl"
 _INDEX_PATH.parent.mkdir(exist_ok=True)
 
 
-# ── In-memory store ───────────────────────────────────────────────────────────
+# ── In-memory store 
 
 class FaissStore:
     def __init__(self):
@@ -160,7 +122,7 @@ class FaissStore:
 _store = FaissStore()
 
 
-# ── Embedding via Ollama ──────────────────────────────────────────────────────
+# ── Embedding via Ollama
 
 async def _embed(texts: List[str]) -> np.ndarray:
     """Embed a list of texts using nomic-embed-text via Ollama."""
@@ -183,14 +145,11 @@ async def _embed(texts: List[str]) -> np.ndarray:
     return np.array(vectors, dtype="float32")
 
 
-# ── Text chunk builders (DB rows → natural language) ─────────────────────────
+# Text chunk builders (DB rows → natural language) 
 
 def _planning_chunks(planning_id: int) -> tuple[List[str], List[dict]]:
     from chatbot.db import query
 
-    # STRING_AGG requires SQL Server 2017+.
-    # Try it first; fall back to the FOR XML PATH trick (SQL Server 2008+)
-    # if the server raises a syntax error.
     try:
         rows = query("""
             SELECT MachineName, NomOperation,
@@ -298,7 +257,7 @@ def _alerts_chunks() -> tuple[List[str], List[dict]]:
     return texts, meta
 
 
-# ── Public API ────────────────────────────────────────────────────────────────
+# ── Public API 
 
 async def build_index():
     """
@@ -369,16 +328,7 @@ async def retrieve(question: str, planning_id: Optional[int] = None, top_k: int 
     """
     Semantic search: embed the question and return the most relevant chunks.
     Returns [] gracefully if FAISS is not ready (chatbot falls back to SQL-only).
-
-    FIX v2: Added top_k == 0 early-return guard.
-    When SQL_ONLY_INTENTS fire, rag_engine passes top_k=0 to skip FAISS.
-    Without this guard the function still called _embed() (wasting ~1s) and
-    then called faiss.IndexFlatIP.search(q, 0), which raises an exception on
-    some faiss-cpu builds — printing the misleading log line:
-      [FAISS] Retrieve error:    ← empty because the exception has no message
-    The guard short-circuits before any work is done.
     """
-    # FIX v2: skip immediately — no embed call, no FAISS call, no error log
     if top_k == 0:
         return []
 
@@ -419,7 +369,6 @@ async def retrieve(question: str, planning_id: Optional[int] = None, top_k: int 
         return results[:top_k]
 
     except Exception as e:
-        # FIX v2: log repr(e) + full traceback so the error is never silent
         print(f"[FAISS] Retrieve error: {repr(e)}")
         print(traceback.format_exc())
         return []

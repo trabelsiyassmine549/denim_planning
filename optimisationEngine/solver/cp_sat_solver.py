@@ -42,9 +42,9 @@ try:
 except ImportError:
     HAS_ORTOOLS = False
 
-from models.domain import Commande, Machine, OperationRecette
-from models.schemas import GanttRow
-from utils.time_utils import (
+from optimisationEngine.models.domain import Commande, Machine, OperationRecette
+from optimisationEngine.models.schemas import GanttRow
+from optimisationEngine.utils.time_utils import (
     PPD,
     START_DATE,
     date_to_day_offset,
@@ -62,7 +62,7 @@ LNS_ITERATIONS    = 300
 LNS_TIME_LIMIT    = 45.0
 DESTROY_RATIO     = 0.25
 RANDOM_SEED       = 42
-MAX_SOLVE_SECONDS = 90
+MAX_SOLVE_SECONDS = 120
 TARDINESS_PENALTY = 100_000
 
 
@@ -648,7 +648,8 @@ class SolverResult:
     def extract_rows(self, commandes, ops_by_recette, lns_state) -> List[GanttRow]:
         return _extract_results(commandes, ops_by_recette, self._task_vars, lns_state, self._solver)
 
-
+# horizon c'est la durée max de la planif, en PM.  
+# On peut la calculer à partir des commandes (max export day + marge) ou fixer une grosse valeur arbitraire (ex: 1000 PM = ~4 mois) pour éviter d'avoir à la recalculer à chaque itération de LNS.
 def run_cpsat(commandes, ops_by_recette, machines_ok, lns_state, horizon) -> SolverResult:
     if not HAS_ORTOOLS:
         raise RuntimeError("OR-Tools is not installed")

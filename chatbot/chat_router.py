@@ -1,39 +1,3 @@
-"""
-chat_router.py — FastAPI chatbot endpoint (SOA v2.0).
-
-Single endpoint: POST /api/chat
-  - Frontend sends: question, planningId (optional), sessionId
-  - Backend: fetches SQL context → builds prompt → calls Mistral
-  - Redis stores conversation memory per session
-
-No .NET proxy. No FAISS. No docx.
-Angular calls this directly.
-
-FIXES:
-  - FIX (previous): corrected the session_id assignment line.
-      BEFORE (broken): session_id = req.session_id if req.sessionId else str(uuid.uuid4())
-                       ^ req.session_id does not exist (wrong attribute name)
-      AFTER  (fixed):  session_id = req.sessionId  if req.sessionId else str(uuid.uuid4())
-
-  - FIX (v2.2): Only save a Mistral reply to Redis memory if it ends with a
-      sentence-ending character (. ! ? »). A truncated answer (caused by
-      num_predict being too low) was being persisted to Redis and then replayed
-      into subsequent prompts, corrupting the conversation context and causing
-      wrong or very short follow-up answers.
-
-  - FIX (v2.3): Input validation via _is_intelligible(). Gibberish / keyboard
-      mash (e.g. "vhbjnk,l;m") is rejected immediately with a friendly error
-      message — Mistral is never called, so no wasted inference time.
-
-  - FIX (v2.4): Added vowel-ratio check to _is_intelligible().
-      Strings like "ffffklsld", "jhfbvf", "vhbjnk" passed v2.3 rules because
-      they contain 2+ consecutive letters and a high letter/symbol ratio.
-      The new Rule 5 rejects any letter-sequence where fewer than 10 % of
-      letters are vowels — the hallmark of keyboard mash in Latin-script input.
-      This prevents Mistral from being called (and hallucinating planning data)
-      for all-consonant garbage input.
-"""
-
 import re
 import uuid
 from fastapi import APIRouter, HTTPException
@@ -46,7 +10,7 @@ from chatbot.redis_cache import get_memory, add_to_memory, clear_memory
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
-# ── Schemas ───────────────────────────────────────────────────────────────────
+# ── Schemas 
 
 class ChatRequest(BaseModel):
     question:   str
@@ -60,7 +24,7 @@ class ChatResponse(BaseModel):
     mode:      str   # "rag" | "general"
 
 
-# ── Input validation ──────────────────────────────────────────────────────────
+# ── Input validation 
 
 # Common single-word commands that are valid even if short.
 _VALID_KEYWORDS = {
@@ -161,8 +125,6 @@ async def chat(req: ChatRequest):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question vide.")
 
-    # Assign / reuse session
-    # FIX: use req.sessionId (camelCase), not req.session_id (does not exist on the model)
     session_id = req.sessionId if req.sessionId else str(uuid.uuid4())
 
     # Reject gibberish immediately — do not call Mistral
@@ -174,8 +136,6 @@ async def chat(req: ChatRequest):
             mode="general",
         )
 
-    # Load conversation memory from Redis
-    # `or []` guards against Redis being down (_safe decorator returns None)
     memory = get_memory(session_id) or []
 
     # Run RAG pipeline
@@ -188,11 +148,6 @@ async def chat(req: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    # Persist turn to Redis memory.
-    # FIX: only save the assistant reply if it looks complete (ends with terminal
-    # punctuation). A truncated reply poisons subsequent conversation turns because
-    # Redis replays it verbatim into the next prompt, giving Mistral a broken
-    # context to reason from. The user question is always saved regardless.
     add_to_memory(session_id, "user", req.question.strip())
     if _is_complete(reply):
         add_to_memory(session_id, "assistant", reply)

@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 import httpx
 from fastapi import HTTPException
 
-from models.domain import Commande, Machine, OperationRecette
+from optimisationEngine.models.domain import Commande, Machine, OperationRecette
 
 DOTNET_BASE_URL = "https://localhost:7228/api"   # change port if needed
 
