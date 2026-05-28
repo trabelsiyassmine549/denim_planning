@@ -211,10 +211,33 @@ async def run_planning(req: RunRequest):
     except Exception as e:
         raise HTTPException(500, f"Data loading error: {str(e)}")
 
+    # ── Guard: no commandes to schedule ─────────────────────────────────────
+    if not commandes:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code":    "NO_COMMANDES",
+                "message": (
+                    "Aucune commande en attente à planifier. "
+                    "Vérifiez qu'il existe des commandes avec le statut 'En attente'."
+                ),
+            },
+        )
+
     machines_ok = [m for m in machines if m.is_available()]
 
+    # ── Guard: no machines available ─────────────────────────────────────────
     if not machines_ok:
-        raise HTTPException(400, "No machines available")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code":    "NO_MACHINES",
+                "message": (
+                    "Aucune machine disponible. "
+                    "Vérifiez que des machines sont actives et disponibles."
+                ),
+            },
+        )
 
     warnings = validate(commandes, machines, ops_by_recette)
 
