@@ -174,7 +174,7 @@ def fetch_operations_for_order(planning_id: int, commande_num: str) -> str:
     return "\n".join(lines)
 
 
-# ── Fragmentation (lots) ──────────────────────────────────────────────────────
+# ── Fragmentation (lots) 
 
 def fetch_fragmentation(planning_id: int) -> str:
     sql = """
@@ -429,7 +429,6 @@ def fetch_valid_transfers(planning_id: int) -> str:
       Or a "no transfers possible" message if every (commande, operation) maps
       to exactly one machine (no parallelism exists in this planning).
     """
-    # Step 1 — fragmentation groups
     frag_sql = """
         SELECT MachineName, NumeroCommande, NomOperation,
                COUNT(*) AS NbLots
@@ -440,7 +439,6 @@ def fetch_valid_transfers(planning_id: int) -> str:
     """
     frag_rows = _cached_query(planning_id, frag_sql, (planning_id,))
 
-    # Step 2 — machine total load
     load_sql = """
         SELECT MachineName, SUM(DureeTotale) AS TotalMinutes
         FROM PlanningRows
@@ -450,14 +448,12 @@ def fetch_valid_transfers(planning_id: int) -> str:
     load_rows = _cached_query(planning_id, load_sql, (planning_id,))
     load_map: Dict[str, int] = {r["MachineName"]: int(r["TotalMinutes"] or 0) for r in load_rows}
 
-    # Step 3 — build (commande, operation) → {machine: nb_lots}
     from collections import defaultdict
     groups: Dict[tuple, Dict[str, int]] = defaultdict(dict)
     for r in frag_rows:
         key = (r["NumeroCommande"], r["NomOperation"])
         groups[key][r["MachineName"]] = int(r["NbLots"])
 
-    # Step 4 — find valid transfers
     transfers = []
     for (commande, operation), machine_lots in groups.items():
         if len(machine_lots) < 2:
@@ -515,7 +511,6 @@ def fetch_valid_transfers(planning_id: int) -> str:
     return "\n".join(lines)
 
 
-# ── Operation sequencing / ordering verification 
 
 def fetch_operation_sequence(planning_id: int) -> str:
     """
@@ -603,7 +598,6 @@ def fetch_operation_sequence(planning_id: int) -> str:
     return "\n".join(lines).rstrip()
 
 
-# ── Machine impact analysis (panne / breakdown hypotheticals) 
 
 
 def fetch_machine_impact(planning_id: int, machine_name: str) -> str:
@@ -635,7 +629,6 @@ def fetch_machine_impact(planning_id: int, machine_name: str) -> str:
       "Les [DONNÉES SQL] sont la source de vérité absolue" is applied correctly.
       Mistral is instructed via the panne_preamble to copy these lines verbatim.
     """
-    # Query A — operations directly on the named machine
     impact_sql = """
         SELECT NumeroCommande, NomOperation,
                COUNT(*)        AS NbLots,
@@ -658,7 +651,6 @@ def fetch_machine_impact(planning_id: int, machine_name: str) -> str:
             f"Aucune opération assignée à {machine_name} dans ce planning."
         )
 
-    # Query B — alternative machines for each (commande, operation) pair.
 
     fallback_sql = """
         SELECT pr.NumeroCommande, pr.NomOperation, pr.MachineName,
@@ -717,8 +709,6 @@ def fetch_machine_impact(planning_id: int, machine_name: str) -> str:
 
     return "\n".join(lines)
 
-
-# ── Generic SQL for free-form questions 
 
 def fetch_generic(sql: str, planning_id: Optional[int] = None) -> List[Dict]:
     """Execute arbitrary read-only SQL, with cache."""

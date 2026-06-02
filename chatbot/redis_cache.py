@@ -17,17 +17,16 @@ try:
     REDIS_OK = True
     print("[REDIS] Connected.")
 except Exception as e:
-    _redis = None  # type: ignore
+    _redis = None  
     REDIS_OK = False
     print(f"[REDIS] Unavailable — running without cache: {e}")
 
-SQL_TTL = 300        # 5 min — SQL cache per planning/query
-MEM_TTL = 3600       # 1 hour — conversation memory per session
-CTX_TTL = 600        # 10 min — planning context summary
+SQL_TTL = 300        # 5 min 
+MEM_TTL = 3600       # 1 hour 
+CTX_TTL = 600        # 10 min 
 
 
 def _safe(fn):
-    """Decorator: swallow Redis errors so the app never crashes on cache miss."""
     def wrapper(*args, **kwargs):
         if not REDIS_OK or _redis is None:
             return None
@@ -38,8 +37,6 @@ def _safe(fn):
             return None
     return wrapper
 
-
-# ── SQL cache 
 
 def _sql_key(planning_id: Optional[int], sql: str) -> str:
     h = hashlib.md5(sql.encode()).hexdigest()[:12]
@@ -62,7 +59,7 @@ def set_sql_cache(planning_id: Optional[int], sql: str, data: Any) -> None:
 
 # ── Conversation memory 
 
-MAX_TURNS = 6   # keep last 6 turns (3 user + 3 assistant) in memory
+MAX_TURNS = 6  
 
 def _mem_key(session_id: str) -> str:
     return f"chatbot:mem:{session_id}"
@@ -71,24 +68,22 @@ def _mem_key(session_id: str) -> str:
 @_safe
 def get_memory(session_id: str) -> List[Dict[str, str]]:
     key = _mem_key(session_id)
-    val = _redis.get(key)  # type: ignore
+    val = _redis.get(key)  
     return json.loads(val) if val else []
 
 
 @_safe
 def add_to_memory(session_id: str, role: str, content: str) -> None:
     key = _mem_key(session_id)
-    val = _redis.get(key)  # type: ignore
+    val = _redis.get(key)  
     history: List[Dict] = json.loads(val) if val else []
     history.append({"role": role, "content": content})
-    # Keep last MAX_TURNS * 2 messages (each turn = user + assistant)
     history = history[-(MAX_TURNS * 2):]
-    _redis.setex(key, MEM_TTL, json.dumps(history))  # type: ignore
-
+    _redis.setex(key, MEM_TTL, json.dumps(history))  
 
 @_safe
 def clear_memory(session_id: str) -> None:
-    _redis.delete(_mem_key(session_id))  # type: ignore
+    _redis.delete(_mem_key(session_id)) 
 
 
 # ── Planning context cache 
@@ -100,11 +95,11 @@ def _ctx_key(planning_id: int) -> str:
 @_safe
 def get_planning_context(planning_id: int) -> Optional[Dict]:
     key = _ctx_key(planning_id)
-    val = _redis.get(key)  # type: ignore
+    val = _redis.get(key) 
     return json.loads(val) if val else None
 
 
 @_safe
 def set_planning_context(planning_id: int, context: Dict) -> None:
     key = _ctx_key(planning_id)
-    _redis.setex(key, CTX_TTL, json.dumps(context, default=str))  # type: ignore
+    _redis.setex(key, CTX_TTL, json.dumps(context, default=str)) 

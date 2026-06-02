@@ -1,36 +1,3 @@
-"""
-solver/cp_sat_solver.py — Denim Washing Production Scheduler
-=============================================================
-
-FIXES:
-  - collect_split_warnings: guard on missing machines_by_op attribute
-  - _build_cp_model: skip slices with dur <= 0 OR dur >= horizon (was: only dur <= 0)
-  - unassign_task: use op.DureeTotale directly (was computing from task_load which
-    could be stale/wrong after partial updates)
-  - _best_n_machines_for: returns [] safely when op_key missing
-  - lns_fallback: guard on empty distribution
-  - collect_split_warnings: message clair quand 1 seule machine dispo
-    vs quand les lots sont trop peu pour être divisés
-
-HYBRID ARCHITECTURE
--------------------
-LAYER 1 — COUCHE HEURISTIQUE (Large Neighborhood Search)
-LAYER 2 — COUCHE CP-SAT (timing optimisation only)
-
-LOT SIZE RULE
--------------
-    lot_size = min(op.QuantiteLot, machine.CapaciteMax, cmd.Quantite)
-
-MULTI-MACHINE SPLITTING
-------------------------
-    When max_machines_per_op > 1, the LNS may split an operation's lots
-    across up to max_machines_per_op different machines of the same type.
-    Each machine receives a contiguous slice of lots (round-robin by lot
-    count).  The CP-SAT layer then optimises the start times of each
-    machine-slice independently while still respecting operation precedence
-    (all slices of op i must finish before any slice of op i+1 starts).
-"""
-
 import math
 import time
 from collections import defaultdict
@@ -42,21 +9,15 @@ try:
 except ImportError:
     HAS_ORTOOLS = False
 
-from optimisationEngine.models.domain import Commande, Machine, OperationRecette
+
 from optimisationEngine.models.schemas import GanttRow
 from optimisationEngine.utils.time_utils import (
     PPD,
-    START_DATE,
     date_to_day_offset,
     date_to_pm,
-    fmt_date,
     pm_to_clock,
     working_day_date,
 )
-
-# ---------------------------------------------------------------------------
-# Global constants
-# ---------------------------------------------------------------------------
 
 LNS_ITERATIONS    = 300
 LNS_TIME_LIMIT    = 45.0
@@ -84,26 +45,13 @@ def _priority_score(cmd, ops_by_recette: dict) -> float:
 def _effective_lot_size(cmd, op, machine) -> int:
     return max(1, min(op.QuantiteLot, machine.CapaciteMax, cmd.Quantite))
 
-
-# ===========================================================================
-# LAYER 1 — COUCHE HEURISTIQUE (Large Neighborhood Search)
-# ===========================================================================
-
+# couche LNS
 class LNSState:
-    """
-    assign       : (cmd_num, op_idx) -> list[Machine]   ← list (multi-machine)
-    machine_load : machine_id -> total minutes
-    task_load    : (cmd_num, op_idx) -> total minutes for this task
-    lot_size     : (cmd_num, op_idx) -> effective lot size
-    nb_lots      : (cmd_num, op_idx) -> total number of lots
-    machine_lots : (cmd_num, op_idx) -> list[(machine, lots_for_that_machine)]
-    machines_by_op: op_name_lower -> list[Machine]  (kept for split-warnings)
-    """
 
     def __init__(self, commandes, ops_by_recette, machines_by_op):
         self.commandes       = commandes
         self.ops_by_recette  = ops_by_recette
-        self.machines_by_op  = machines_by_op   # FIX: always set, never missing
+        self.machines_by_op  = machines_by_op  
 
         self.assign:       Dict[Tuple[str, int], List[object]] = {}
         self.machine_load: Dict[int, int]                       = defaultdict(int)
@@ -112,7 +60,7 @@ class LNSState:
         self.nb_lots:      Dict[Tuple[str, int], int]           = {}
         self.machine_lots: Dict[Tuple[str, int], List[Tuple[object, int]]] = {}
 
-    # -----------------------------------------------------------------------
+
     def _compute_task_load(self, cmd, op, machine) -> int:
         ls = _effective_lot_size(cmd, op, machine)
         nb = math.ceil(cmd.Quantite / ls)
@@ -128,12 +76,8 @@ class LNSState:
             key=lambda m: self.machine_load[m.Id] + self._compute_task_load(cmd, op, m)
         )
 
-    def _best_n_machines_for(self, cmd, op, n: int) -> List[object]:
-        """
-        Pick up to n distinct machines for this operation type, sorted by
-        current load (least loaded first).  Returns fewer than n if there
-        are not enough capable machines.
-        """
+    def _best_n_machines_for(self, op, n: int) -> List[object]:
+       
         op_key = op.NomOperation.lower()
         candidates = self.machines_by_op.get(op_key, [])
         if not candidates:
@@ -141,28 +85,21 @@ class LNSState:
         sorted_candidates = sorted(candidates, key=lambda m: self.machine_load[m.Id])
         return sorted_candidates[:n]
 
-    # -----------------------------------------------------------------------
     def assign_task(self, cmd, op_idx: int, op, machines_list: List[object]) -> None:
-        """
-        Assign a (possibly multi-machine) task.
-        machines_list: ordered list of machines; lots are distributed evenly.
-        """
+    
         if not machines_list:
             return
 
         key = (cmd.NumeroCommande, op_idx)
 
-        # Remove old assignment if any
         if key in self.assign:
             for old_m, old_nb in self.machine_lots.get(key, []):
                 self.machine_load[old_m.Id] -= op.DureeTotale * old_nb
 
-        # Compute lot distribution
         primary_machine = machines_list[0]
         ls       = _effective_lot_size(cmd, op, primary_machine)
         total_nb = max(1, math.ceil(cmd.Quantite / ls))
 
-        # Distribute lots as evenly as possible across machines
         n_machines = len(machines_list)
         base_lots, remainder = divmod(total_nb, n_machines)
         distribution: List[Tuple[object, int]] = []
@@ -179,7 +116,7 @@ class LNSState:
         self.task_load[key]    = op.DureeTotale * total_nb
 
     def _unassign_with_op(self, cmd_num: str, op_idx: int, op) -> Optional[List[object]]:
-        """Unassign while properly subtracting machine loads using DureeTotale."""
+
         key = (cmd_num, op_idx)
         if key not in self.assign:
             return None
@@ -192,7 +129,7 @@ class LNSState:
         return machines
 
     def unassign_task(self, cmd_num: str, op_idx: int) -> Optional[List[object]]:
-        """Unassign without op reference — avoid if possible (load correction is approximate)."""
+
         key = (cmd_num, op_idx)
         if key not in self.assign:
             return None
@@ -205,7 +142,7 @@ class LNSState:
         self.lot_size.pop(key, None)
         return machines
 
-    # -----------------------------------------------------------------------
+
     def score(self) -> float:
         score = 0.0
         for cmd in self.commandes:
@@ -264,7 +201,7 @@ def _construct_initial_solution(state: LNSState, max_machines_per_op: int = 1) -
     for cmd in sorted_cmds:
         ops = state.ops_by_recette.get(cmd.RecetteId, [])
         for op_idx, op in enumerate(ops):
-            machines = state._best_n_machines_for(cmd, op, max_machines_per_op)
+            machines = state._best_n_machines_for(op, max_machines_per_op)
             if not machines:
                 continue
             state.assign_task(cmd, op_idx, op, machines)
@@ -300,7 +237,7 @@ def _lns_repair(state: LNSState, destroyed_keys: List[Tuple[str, int]],
         tasks_to_repair.append((cmd, op_idx, op))
 
     for cmd, op_idx, op in tasks_to_repair:
-        machines = state._best_n_machines_for(cmd, op, max_machines_per_op)
+        machines = state._best_n_machines_for( op, max_machines_per_op)
         if not machines:
             continue
         state.assign_task(cmd, op_idx, op, machines)
@@ -344,10 +281,7 @@ def run_lns(commandes, ops_by_recette, machines_ok,
     state.restore_assign(best_snapshot)
     return state
 
-
-# ===========================================================================
-# LAYER 2 — COUCHE CP-SAT (timing optimisation)
-# ===========================================================================
+# couche cp-sat
 
 def _build_cp_model(commandes, ops_by_recette, machines_ok, lns_state, horizon):
     model        = cp_model.CpModel()
@@ -368,7 +302,6 @@ def _build_cp_model(commandes, ops_by_recette, machines_ok, lns_state, horizon):
             lot_size = lns_state.lot_size.get(key, op.QuantiteLot)
             nb_lots  = lns_state.nb_lots.get(key, 1)
 
-            # Sanitize command number for CP-SAT variable names
             safe_cmd = "".join(c if c.isalnum() or c == "_" else "_"
                                for c in cmd.NumeroCommande)
 
@@ -376,7 +309,6 @@ def _build_cp_model(commandes, ops_by_recette, machines_ok, lns_state, horizon):
             for slice_idx, (machine, slice_nb) in enumerate(distribution):
                 dur = op.DureeTotale * slice_nb
 
-                # FIX: skip degenerate slices (0 duration OR too large for horizon)
                 if dur <= 0 or dur >= horizon:
                     continue
 
@@ -398,7 +330,6 @@ def _build_cp_model(commandes, ops_by_recette, machines_ok, lns_state, horizon):
                     "nb_lots": slice_nb,
                 })
 
-            # Skip task entirely if no valid slices were built
             if not slice_vars:
                 continue
 
@@ -417,7 +348,6 @@ def _build_cp_model(commandes, ops_by_recette, machines_ok, lns_state, horizon):
         if machine_itvs[m.Id]:
             model.AddNoOverlap(machine_itvs[m.Id])
 
-    # Operation precedence: all slices of op i must end before any slice of op i+1
     for cmd in commandes:
         ops = ops_by_recette.get(cmd.RecetteId, [])
         for i in range(len(ops) - 1):
@@ -565,25 +495,15 @@ def _print_machine_utilisation(lns_state: LNSState) -> None:
         print(f"  ... ({len(sorted_items) - 20} more machines)")
 
 
-# ===========================================================================
-# Split-warnings helper — exported to api.py
-# ===========================================================================
 
 def collect_split_warnings(commandes, ops_by_recette, lns_state: "LNSState",
                             requested_machines: int) -> List[str]:
-    """
-    Returns warning strings for operations that could not be split across
-    as many machines as requested.
+    
 
-    Rules:
-      - If an operation only has 1 machine available in the factory → hard warning.
-      - If it has enough machines but lots only filled fewer than requested → partial warning.
-    """
-    # FIX: guard — if machines_by_op attribute is missing or empty, return []
     if not hasattr(lns_state, "machines_by_op") or not lns_state.machines_by_op:
         return []
 
-    # op_name -> {"available": N, "actual": N}
+
     limited_ops: Dict[str, Dict[str, int]] = {}
 
     for cmd in commandes:
@@ -610,17 +530,6 @@ def collect_split_warnings(commandes, ops_by_recette, lns_state: "LNSState",
 
     warnings: List[str] = []
 
-    # True split into 3 cases based on the real root cause:
-    #
-    #   NOT_ENOUGH_MACHINES : available < requested
-    #       → the factory simply doesn't have enough machines of that type,
-    #         regardless of lot count.  actual == available (used all that exist).
-    #
-    #   NOT_ENOUGH_LOTS     : available >= requested but actual < requested
-    #       → enough machines exist but the order has too few lots to spread
-    #         across all of them.
-    #
-    # All emit: SPLIT_WARNING|<type>|<op>|<actual>|<available>|<requested>
 
     for op_name, info in sorted(limited_ops.items()):
         actual    = info["actual"]
@@ -635,9 +544,7 @@ def collect_split_warnings(commandes, ops_by_recette, lns_state: "LNSState",
     return warnings
 
 
-# ===========================================================================
-# Public API — used by api.py
-# ===========================================================================
+# Public API : used by api.py
 
 class SolverResult:
     def __init__(self, solver, task_vars, makespan_pm: int):
@@ -649,7 +556,6 @@ class SolverResult:
         return _extract_results(commandes, ops_by_recette, self._task_vars, lns_state, self._solver)
 
 # horizon c'est la durée max de la planif, en PM.  
-# On peut la calculer à partir des commandes (max export day + marge) ou fixer une grosse valeur arbitraire (ex: 1000 PM = ~4 mois) pour éviter d'avoir à la recalculer à chaque itération de LNS.
 def run_cpsat(commandes, ops_by_recette, machines_ok, lns_state, horizon) -> SolverResult:
     if not HAS_ORTOOLS:
         raise RuntimeError("OR-Tools is not installed")
@@ -677,10 +583,7 @@ def run_cpsat(commandes, ops_by_recette, machines_ok, lns_state, horizon) -> Sol
 
 
 def lns_fallback(commandes, ops_by_recette, lns_state) -> List[GanttRow]:
-    """
-    Greedy sequential schedule used when OR-Tools is unavailable.
-    Supports multi-machine slices.
-    """
+
     machine_end: Dict[int, int] = defaultdict(int)
     rows: List[GanttRow] = []
 
@@ -691,7 +594,7 @@ def lns_fallback(commandes, ops_by_recette, lns_state) -> List[GanttRow]:
         for op_idx, op in enumerate(ops):
             key          = (cmd.NumeroCommande, op_idx)
             distribution = lns_state.machine_lots.get(key, [])
-            # FIX: guard on empty distribution
+           
             if not distribution:
                 continue
 
@@ -745,13 +648,8 @@ def lns_fallback(commandes, ops_by_recette, lns_state) -> List[GanttRow]:
 
     return rows
 
-
-# ===========================================================================
-# Public entry point (standalone CLI)
-# ===========================================================================
-
 def solve(max_machines_per_op: int = 1) -> List[GanttRow]:
-    from utils.data_loader import load_data, validate_data   # type: ignore
+    from utils.data_loader import load_data, validate_data   
 
     commandes, machines, ops_by_recette, recettes_by_id = load_data()
 

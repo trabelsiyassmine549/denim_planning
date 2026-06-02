@@ -1,10 +1,3 @@
-"""
-data/fetcher.py — Live data fetching from the .NET backend + validation
-=======================================================================
-Fetches commandes, machines, and recettes/operations via REST,
-then builds the internal domain objects used by the solver.
-"""
-
 from typing import Dict, List, Optional
 
 import httpx
@@ -12,12 +5,7 @@ from fastapi import HTTPException
 
 from optimisationEngine.models.domain import Commande, Machine, OperationRecette
 
-DOTNET_BASE_URL = "https://localhost:7228/api"   # change port if needed
-
-
-# ---------------------------------------------------------------------------
-# Low-level HTTP helper
-# ---------------------------------------------------------------------------
+DOTNET_BASE_URL = "https://localhost:7228/api"  
 
 async def _fetch(client: httpx.AsyncClient, path: str, token: str):
     headers = {"Authorization": f"Bearer {token}"}
@@ -34,29 +22,15 @@ async def _fetch(client: httpx.AsyncClient, path: str, token: str):
     return r.json()
 
 
-# ---------------------------------------------------------------------------
-# Public loader
-# ---------------------------------------------------------------------------
-
 async def load_live_data(
     token: str,
     commande_ids: Optional[List[int]] = None,
 ):
-    """
-    Fetch commandes, machines, and recette operations from the .NET backend.
-
-    Returns
-    -------
-    commandes       : List[Commande]
-    machines        : List[Machine]
-    ops_by_recette  : Dict[int, List[OperationRecette]]   (sorted by Ordre)
-    """
     async with httpx.AsyncClient(verify=False) as client:
         raw_cmds     = await _fetch(client, "/Commandes",  token)
         raw_machines = await _fetch(client, "/Machines",   token)
         raw_recettes = await _fetch(client, "/Recettes",   token)
 
-    # --- Commandes -----------------------------------------------------------
     commandes = [
         Commande(c) for c in raw_cmds
         if c.get("statut", "").lower() == "en attente"
@@ -64,10 +38,10 @@ async def load_live_data(
     if commande_ids:
         commandes = [c for c in commandes if c.Id in commande_ids]
 
-    # --- Machines ------------------------------------------------------------
+
     machines = [Machine(m) for m in raw_machines]
 
-    # --- Operations (embedded in recettes) -----------------------------------
+
     ops_by_recette: Dict[int, List[OperationRecette]] = {}
     for r in raw_recettes:
         rid = r["id"]
@@ -80,10 +54,6 @@ async def load_live_data(
 
     return commandes, machines, ops_by_recette
 
-
-# ---------------------------------------------------------------------------
-# Validation
-# ---------------------------------------------------------------------------
 
 def validate(
     commandes: List[Commande],

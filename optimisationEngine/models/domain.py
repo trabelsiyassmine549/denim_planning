@@ -1,8 +1,3 @@
-"""
-models/domain.py — Internal domain models for the Denim Washing Production Planner
-"""
-
-
 class Commande:
     def __init__(self, d: dict):
         self.Id             = d["id"]

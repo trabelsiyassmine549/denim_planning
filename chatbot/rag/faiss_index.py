@@ -1,18 +1,15 @@
-
 import pickle
 import traceback
 from pathlib import Path
 from typing import List, Optional
-
 import httpx
 import numpy as np
 
-# ── FAISS import (optional) 
 try:
     import faiss
     FAISS_OK = True
 except ImportError:
-    faiss = None  # type: ignore
+    faiss = None
     FAISS_OK = False
     print("[FAISS] faiss-cpu not installed — semantic retrieval disabled.")
 
@@ -27,12 +24,10 @@ _INDEX_PATH.parent.mkdir(exist_ok=True)
 
 
 # ── In-memory store 
-
 class FaissStore:
     def __init__(self):
-        self.index: Optional[object] = None   # faiss.IndexFlatIP
+        self.index: Optional[object] = None 
         self.texts: List[str] = []
-        self.meta:  List[dict] = []           # {planning_id, table, key}
 
     def is_ready(self) -> bool:
         return self.index is not None and len(self.texts) > 0
@@ -164,8 +159,6 @@ def _planning_chunks(planning_id: int) -> tuple[List[str], List[dict]]:
             GROUP BY MachineName, NomOperation
         """, (planning_id,))
     except Exception:
-        # Fallback compatible with SQL Server 2008+.
-        # STUFF removes the leading ', ' that FOR XML PATH prepends.
         rows = query("""
             SELECT
                 pr.MachineName,

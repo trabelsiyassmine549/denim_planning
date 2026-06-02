@@ -1,18 +1,10 @@
-"""
-models/schemas.py — Pydantic request / response schemas for the FastAPI layer
-"""
-
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
-
 class RunRequest(BaseModel):
     token:        str
-    commandeIds:  Optional[List[int]] = None   # None → all "En attente"
+    commandeIds:  Optional[List[int]] = None  
     maxMachinesPerOp: int = Field(default=1, ge=1, le=3)
-    # Optional explicit schedule start datetime (ISO-8601 local time).
-    # Example: "2026-05-10T06:00:00"
-    # When None, api.py falls back to datetime.now() — the old behaviour.
     startDatetime: Optional[str] = None
 
 

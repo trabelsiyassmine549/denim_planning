@@ -3,8 +3,7 @@ import pyodbc
 from contextlib import contextmanager
 from typing import List, Dict, Any
 
-# ── Connection string ─────────────────────────────────────────────────────────
-# Set CHATBOT_DB_CONN in your environment, or edit the default below.
+#  Connection string 
 _DEFAULT_CONN = (
     "DRIVER={ODBC Driver 17 for SQL Server};"
     "SERVER=localhost\\SQLEXPRESS;"
@@ -18,7 +17,6 @@ DB_CONN_STR = os.getenv("CHATBOT_DB_CONN", _DEFAULT_CONN)
 
 @contextmanager
 def get_connection():
-    """Yield a pyodbc connection, auto-close on exit."""
     conn = pyodbc.connect(DB_CONN_STR, autocommit=True)
     try:
         yield conn
@@ -27,10 +25,7 @@ def get_connection():
 
 
 def query(sql: str, params: tuple = ()) -> List[Dict[str, Any]]:
-    """
-    Execute a SELECT query and return a list of dicts.
-    Each dict maps column_name -> value.
-    """
+
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(sql, params)
@@ -42,13 +37,11 @@ def query(sql: str, params: tuple = ()) -> List[Dict[str, Any]]:
 
 
 def query_one(sql: str, params: tuple = ()) -> Dict[str, Any] | None:
-    """Return the first row as a dict, or None."""
     results = query(sql, params)
     return results[0] if results else None
 
 
 def scalar(sql: str, params: tuple = ()):
-    """Return the first column of the first row (scalar value)."""
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(sql, params)

@@ -11,11 +11,10 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
 # ── Schemas 
-
 class ChatRequest(BaseModel):
     question:   str
     planningId: Optional[int] = None
-    sessionId:  Optional[str] = None   # client generates once per conversation
+    sessionId:  Optional[str] = None  
 
 
 class ChatResponse(BaseModel):
@@ -26,14 +25,12 @@ class ChatResponse(BaseModel):
 
 # ── Input validation 
 
-# Common single-word commands that are valid even if short.
 _VALID_KEYWORDS = {
     "résumé", "resume", "summary", "alertes", "alerts", "retards",
     "machines", "planning", "commandes", "orders", "bilan", "rapport",
     "help", "aide", "bonjour", "hello", "hi", "status", "statut",
 }
 
-# Vowels covering ASCII + French accented characters.
 _VOWELS = set("aeiouàâäéèêëîïôùûüœæ")
 
 
@@ -41,34 +38,15 @@ def _is_intelligible(text: str) -> bool:
     """
     Return True if the question looks like a real human message.
     Rejects keyboard mash, random symbols, and very short non-word inputs.
-
-    Rules (all must pass):
-      1. At least 3 characters after stripping whitespace.
-      2. At least one recognisable word (2+ consecutive letters).
-      3. The ratio of letter characters to total non-space characters is ≥ 0.4
-         (catches "vhbjnk,l;m" — mostly consonants with punctuation, but the
-         ratio check is language-agnostic and won't reject French/Arabic).
-      4. Not more than 70 % of characters being non-alphanumeric symbols
-         (rejects pure symbol spam like "!@#$%^&").
-      5. NEW — Vowel ratio ≥ 10 % of all letters.
-         All-consonant strings like "ffffklsld", "jhfbvf", "vhbjnk" have 0 %
-         vowels and are almost certainly keyboard mash.  Real words in French,
-         English, or Arabic transliteration always contain some vowels.
-         10 % is intentionally low to avoid false positives on short words,
-         acronyms (CMD, SQL, RAG), or transliterated Arabic which is sometimes
-         vowel-light in Latin script.
     """
     stripped = text.strip()
 
-    # Rule 1 — minimum length
     if len(stripped) < 3:
         return False
 
-    # Allow known single-keyword commands regardless of other rules
     if stripped.lower() in _VALID_KEYWORDS:
         return True
 
-    # Rule 2 — must contain at least one word (2+ letters in a row)
     if not re.search(r'[a-zA-ZÀ-ÿ]{2,}', stripped):
         return False
 
@@ -76,19 +54,14 @@ def _is_intelligible(text: str) -> bool:
     if not non_space:
         return False
 
-    # Rule 3 — letter ratio ≥ 0.4
     letter_count = len(re.findall(r'[a-zA-ZÀ-ÿ]', non_space))
     if letter_count / len(non_space) < 0.4:
         return False
 
-    # Rule 4 — symbol ratio ≤ 0.7
     symbol_count = len(re.findall(r'[^a-zA-ZÀ-ÿ0-9\s]', non_space))
     if symbol_count / len(non_space) > 0.7:
         return False
 
-    # Rule 5 — vowel ratio ≥ 10 % of all letters.
-    # Only applied when there are enough letters to make the ratio meaningful
-    # (≥ 4 letters).  Shorter strings that passed Rules 1-4 are trusted.
     letters_only = [c for c in stripped.lower() if c.isalpha()]
     if len(letters_only) >= 4:
         vowel_ratio = sum(1 for c in letters_only if c in _VOWELS) / len(letters_only)
@@ -104,21 +77,12 @@ _GIBBERISH_REPLY = (
 )
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
 def _is_complete(reply: str) -> bool:
-    """
-    Return True if the reply looks like a complete sentence.
-    A truncated Mistral response typically ends mid-word or mid-sentence without
-    any terminal punctuation. Storing such a reply in Redis would corrupt the
-    conversation memory for all subsequent turns.
-    """
+    # Return True if the reply looks like a complete sentence.
     if not reply:
         return False
     return reply.strip()[-1] in ".!?»)"
 
-
-# ── Endpoint ──────────────────────────────────────────────────────────────────
 
 @router.post("", response_model=ChatResponse)
 async def chat(req: ChatRequest):
@@ -152,8 +116,6 @@ async def chat(req: ChatRequest):
     if _is_complete(reply):
         add_to_memory(session_id, "assistant", reply)
     else:
-        # Log so we can monitor how often truncation still occurs after the
-        # num_predict / num_ctx fixes in rag_engine.py.
         print(f"[MEMORY] Skipped saving incomplete reply for session {session_id}: ...{reply[-60:]!r}")
 
     mode = "rag" if req.planningId is not None else "general"
@@ -162,7 +124,6 @@ async def chat(req: ChatRequest):
 
 @router.delete("/{session_id}")
 async def clear_session(session_id: str):
-    """Clear conversation memory for a session (e.g. on planning change)."""
     clear_memory(session_id)
     return {"status": "cleared", "sessionId": session_id}
 
